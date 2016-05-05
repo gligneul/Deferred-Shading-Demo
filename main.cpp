@@ -35,6 +35,7 @@
 
 #include "lodepng.h"
 #include "ShaderProgram.h"
+#include "Manipulator.h"
 
 // Types
 struct Image {
@@ -66,6 +67,9 @@ static const int kWindowH = 1080;
 static const int kN = 64;
 static const int kM = 64;
 static const int kNumIndices = 6 * (kN - 1) * (kM - 1);
+
+// Camera manipulator
+static Manipulator manipulator;
 
 // Device variables
 static ShaderProgram *shader = nullptr;
@@ -209,7 +213,6 @@ static void CreateVAO( const std::vector< unsigned int >& indices,
     CreateArrayBuffer(&d_binormals, 3, 3, GL_FLOAT, binormals);
     CreateArrayBuffer(&d_textcoords, 4, 2, GL_FLOAT, textcoords);
     
-
     glBindVertexArray(0);
 }
 
@@ -224,6 +227,13 @@ static void CreateSphere() {
 
 // Updates the variables that depend on the modelview and projection
 static void UpdateMatrices() {
+    #if 1 
+    view = glm::lookAt(eye, center, up);
+    view = view * manipulator.GetMatrix(glm::normalize(center - eye));
+    #else
+    view = glm::lookAt(center + glm::vec3(0, 0, 1), center, up);
+    view = view * manipulator.GetMatrix();
+    #endif
     mvp = projection * view * model;
     model_inv = glm::inverse(model);
 }
@@ -234,7 +244,6 @@ static void CreateMatrices() {
     glGetIntegerv(GL_VIEWPORT, vp); 
     auto ratio = (float)vp[2] / vp[3];
     projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
-    view = glm::lookAt(eye, center, up);
     model = glm::rotate(glm::radians(rotation), glm::vec3(0, 1, 0));
     UpdateMatrices();
 }
@@ -374,10 +383,23 @@ static void Keyboard(unsigned char key, int, int) {
 static void Idle() {
     if (rotate) {
         model = glm::rotate(model, 0.005f, glm::vec3(0, 1, 0));
-//        light = glm::rotate(-0.005f, glm::vec3(0, 1, 0)) * light;
         UpdateMatrices();
         glutPostRedisplay();
     }
+}
+
+// Mouse Callback
+static void Mouse(int button, int state, int x, int y) {
+    manipulator.GlutMouse(button, state, x, y);
+    UpdateMatrices();
+    glutPostRedisplay();
+}
+
+// Motion callback
+static void Motion(int x, int y) {
+    manipulator.GlutMotion(x, y);
+    UpdateMatrices();
+    glutPostRedisplay();
 }
 
 // Loads the configuration file
@@ -418,6 +440,8 @@ int main(int argc, char *argv[]) {
     glutReshapeFunc(Reshape);
     glutKeyboardFunc(Keyboard);
     glutIdleFunc(Idle);
+    glutMouseFunc(Mouse);
+    glutMotionFunc(Motion);
     GLenum err = glewInit();
     if (err != GLEW_OK) {
         fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
