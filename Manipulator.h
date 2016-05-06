@@ -59,7 +59,7 @@ public:
     /**
      * Mouse button function
      */
-    void GlutMouse(int button, int state, int x, int y);
+    void GlutMouse(int button, int pressed, int x, int y);
 
     /**
      * Mouse motion function
@@ -75,9 +75,9 @@ private:
 
     const float kZoomScale = 1.0f;
 
-    /** Verifies the k_button state and sets the k_operation */
+    /** Verifies the k_button pressed and sets the k_operation */
     template<int k_button, Operation k_operation>
-    void SetOperation(int button, int state, int x, int y);
+    void SetOperation(int button, int pressed, int x, int y);
 
     /** Computes the sphere vector for rotation */
     glm::vec3 computeSphereCoordinates(int x, int y);

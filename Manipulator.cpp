@@ -67,9 +67,9 @@ void Manipulator::SetReferencePoint(float x, float y, float z) {
     reference_ = glm::vec3(x, y, z);
 }
 
-void Manipulator::GlutMouse(int button, int state, int x, int y) {
-    SetOperation<0, Operation::kRotation>(button, state, x, y);
-    SetOperation<2, Operation::kZoom>(button, state, x, y);
+void Manipulator::GlutMouse(int button, int pressed, int x, int y) {
+    SetOperation<0, Operation::kRotation>(button, pressed, x, y);
+    SetOperation<1, Operation::kZoom>(button, pressed, x, y);
 }
 
 void Manipulator::SetInvertAxis(bool invertX, bool invertY) {
@@ -103,14 +103,14 @@ void Manipulator::GlutMotion(int x, int y) {
 }
 
 template<int k_button, Manipulator::Operation k_operation>
-void Manipulator::SetOperation(int button, int state, int x, int y) {
+void Manipulator::SetOperation(int button, int pressed, int x, int y) {
     if (button == k_button) {
-        if (state == 0 && operation_ == Operation::kNone) {
+        if (pressed == 1 && operation_ == Operation::kNone) {
             operation_ = k_operation;
             x_ = x;
             y_ = y;
             v_ = computeSphereCoordinates(x, y);
-        } else if (state == 1 && operation_ == k_operation) {
+        } else if (pressed == 0 && operation_ == k_operation) {
             operation_ = Operation::kNone;
         }
     }

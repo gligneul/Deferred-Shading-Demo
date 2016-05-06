@@ -30,8 +30,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/glm.hpp>
 #include <GL/glew.h>
-#include <GL/glu.h>
-#include <GL/glut.h>
+#include <GLFW/glfw3.h>
 
 #include "lodepng.h"
 #include "ShaderProgram.h"
@@ -108,13 +107,23 @@ static float rotation = 0.0f;
 // Controls
 static bool rotate = false;
 
+// Verifies the condition, if the condition fails, shows the error
+// message and exits the program
+#define Assert(condition, format, ...) { \
+    if (!condition) { \
+        auto finalformat = std::string("Error at function %s: ") \
+                + format + "\n"; \
+        fprintf(stderr, finalformat.c_str(), __func__, __VA_ARGS__); \
+        exit(1); \
+    } \
+}
+
 // Loads the shader
 static void CreateShader() {
     try {
         shader = new ShaderProgram(vertex_shader, fragment_shader);
     } catch (std::exception& e) {
-        fprintf(stderr, "%s: %s\n", __func__, e.what());
-        exit(1);
+        Assert(false, "%s", e.what());
     }
 }
 
@@ -227,13 +236,8 @@ static void CreateSphere() {
 
 // Updates the variables that depend on the modelview and projection
 static void UpdateMatrices() {
-    #if 1 
     view = glm::lookAt(eye, center, up);
     view = view * manipulator.GetMatrix(glm::normalize(center - eye));
-    #else
-    view = glm::lookAt(center + glm::vec3(0, 0, 1), center, up);
-    view = view * manipulator.GetMatrix();
-    #endif
     mvp = projection * view * model;
     model_inv = glm::inverse(model);
 }
@@ -252,11 +256,7 @@ static void CreateMatrices() {
 static Image LoadPNG(const char* path) {
     Image image;
     unsigned int error = lodepng::decode(image.data, image.w, image.h, path);
-    if (error) {
-        fprintf(stderr, "%s: lodepng error:\n%s\n", __func__,
-                lodepng_error_text(error));
-        exit(1);
-    }
+    Assert(!error, "lodepng error: %s", lodepng_error_text(error));
     for (unsigned int i = 0; i < image.w; ++i) {
         for (unsigned int j = 0; j < image.h / 2; ++j) {
             auto top = image.get(i, j);
@@ -354,29 +354,6 @@ static void Display() {
     glDrawElements(GL_TRIANGLES, kNumIndices, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
     shader->Disable();
-    glutSwapBuffers();
-}
-
-// Resize callback
-static void Reshape(int w, int h) {
-    glViewport(0, 0, w, h);
-    auto ratio = (float)w / h;
-    projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
-    UpdateMatrices();
-}
-
-// Keyboard callback
-static void Keyboard(unsigned char key, int, int) {
-    switch (key) {
-        case 'q':
-            exit(0);
-            break;
-        case ' ':
-            rotate = !rotate;
-            break;
-        default:
-            break;
-    }
 }
 
 // Idle callback
@@ -384,33 +361,59 @@ static void Idle() {
     if (rotate) {
         model = glm::rotate(model, 0.005f, glm::vec3(0, 1, 0));
         UpdateMatrices();
-        glutPostRedisplay();
+    }
+}
+
+// Resize callback
+static void Reshape(GLFWwindow *window) {
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+    glViewport(0, 0, width, height);
+    auto ratio = (float)width / (float)height;
+    projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
+    UpdateMatrices();
+}
+
+// Keyboard callback
+static void Keyboard(GLFWwindow* window, int key, int scancode, int action,
+                     int mods) {
+    if (action != GLFW_PRESS)
+        return;
+
+    switch (key) {
+        case GLFW_KEY_Q:
+            exit(0);
+            break;
+        case GLFW_KEY_SPACE:
+            rotate = !rotate;
+            break;
+        default:
+            break;
     }
 }
 
 // Mouse Callback
-static void Mouse(int button, int state, int x, int y) {
-    manipulator.GlutMouse(button, state, x, y);
+static void Mouse(GLFWwindow *window, int button, int action, int mods) {
+    double x, y;
+    glfwGetCursorPos(window, &x, &y);
+    auto manip_button = (button == GLFW_MOUSE_BUTTON_LEFT) ? 0 :
+                        (button == GLFW_MOUSE_BUTTON_RIGHT) ? 1 : -1;
+    auto pressed = action == GLFW_PRESS;
+    manipulator.GlutMouse(manip_button, pressed, (int)x, (int)y);
     UpdateMatrices();
-    glutPostRedisplay();
 }
 
 // Motion callback
-static void Motion(int x, int y) {
-    manipulator.GlutMotion(x, y);
+static void Motion(GLFWwindow *window, double x, double y) {
+    manipulator.GlutMotion((int)x, (int)y);
     UpdateMatrices();
-    glutPostRedisplay();
 }
 
 // Loads the configuration file
 static void LoadConfiguration(int argc, char *argv[]) {
     const char *config_file = argc > 1 ? argv[1] : "config.txt";
     FILE *f = fopen(config_file, "r");
-    if (!f) {
-        fprintf(stderr, "%s: Cannot open configuration file: %s\n", __func__,
-                config_file);
-        exit(1);
-    }
+    Assert(f, "cannot open configuration file %s", config_file);
 
     fscanf(f, "vertex_shader: %127s\n", vertex_shader);
     fscanf(f, "fragment_shader: %127s\n", fragment_shader);
@@ -431,25 +434,40 @@ static void LoadConfiguration(int argc, char *argv[]) {
 
 // Initialization
 int main(int argc, char *argv[]) {
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH | 
-            GLUT_MULTISAMPLE);
-    glutInitWindowSize(kWindowW, kWindowH);
-    glutCreateWindow("Bump Mapping");
-    glutDisplayFunc(Display);
-    glutReshapeFunc(Reshape);
-    glutKeyboardFunc(Keyboard);
-    glutIdleFunc(Idle);
-    glutMouseFunc(Mouse);
-    glutMotionFunc(Motion);
-    GLenum err = glewInit();
-    if (err != GLEW_OK) {
-        fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
-        exit(1);
-    }
+    // Init glfw
+    Assert(glfwInit(), "glfw init failed", 0);
+    auto window = glfwCreateWindow(kWindowW, kWindowH, "OpenGL4 Application",
+            nullptr, nullptr);
+    Assert(window, "glfw window couldn't be created", 0);
+    glfwMakeContextCurrent(window);
+    glfwSetKeyCallback(window, Keyboard);
+    glfwSetMouseButtonCallback(window, Mouse);
+    glfwSetCursorPosCallback(window, Motion);
+
+    // Init glew
+    auto glew_error = glewInit();
+    Assert(!glew_error, "GLEW error: %s", glewGetErrorString(glew_error));
+
+    // Init application
     LoadConfiguration(argc, argv);
     CreateScene();
-    glutMainLoop();
+
+    // Main loop
+    while (!glfwWindowShouldClose(window)) {
+        Reshape(window);
+        Idle();
+        Display();
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    };
+
+    (void)Reshape;
+    (void)Mouse;
+    (void)Keyboard;
+    (void)Motion;
+    (void)Idle;
+
+    glfwTerminate();
     return 0;
 }
 
