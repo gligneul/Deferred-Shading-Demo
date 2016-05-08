@@ -73,7 +73,7 @@ static const int kNumIndices = 6 * (kN - 1) * (kM - 1);
 static Manipulator manipulator;
 
 // Device variables
-static ShaderProgram *shader = nullptr;
+static ShaderProgram shader;
 static unsigned int d_vao = 0;
 static unsigned int d_indices = 0;
 static unsigned int d_vertices = 0;
@@ -120,7 +120,9 @@ static float rotation = 0.0f;
 // Loads the shader
 static void CreateShader() {
     try {
-        shader = new ShaderProgram(vertex_shader, fragment_shader);
+        shader.LoadVertexShader(vertex_shader);
+        shader.LoadFragmentShader(fragment_shader);
+        shader.LinkShader();
     } catch (std::exception& e) {
         Assert(false, "%s", e.what());
     }
@@ -268,8 +270,6 @@ static void LoadStreetLamp() {
       }
       printf("\n");
     }
-
-    exit(0);
 }
 
 // Loads the meshes
@@ -380,19 +380,19 @@ static void CreateScene() {
 
 // Loads the shader's uniform variables
 static void LoadShaderVariables() {
-    shader->SetUniform("mvp", mvp);
-    shader->SetUniform("model_inv", model_inv);
-    shader->SetUniform("light_pos", light);
-    shader->SetUniform("eye_pos", eye);
-    shader->SetUniform("diffuse", diffuse);
-    shader->SetUniform("ambient", ambient);
-    shader->SetUniform("specular", specular);
-    shader->SetUniform("shininess", shininess);
+    shader.SetUniform("mvp", mvp);
+    shader.SetUniform("model_inv", model_inv);
+    shader.SetUniform("light_pos", light);
+    shader.SetUniform("eye_pos", eye);
+    shader.SetUniform("diffuse", diffuse);
+    shader.SetUniform("ambient", ambient);
+    shader.SetUniform("specular", specular);
+    shader.SetUniform("shininess", shininess);
 
     auto TextureToShader = [&](int n, const char *name, int bufferid) {
         glActiveTexture(GL_TEXTURE0 + n);
         glBindTexture(GL_TEXTURE_2D, bufferid);
-        shader->SetUniform(name, n);
+        shader.SetUniform(name, n);
     };
     TextureToShader(0, "image", d_image);
     TextureToShader(1, "bumpmap", d_bumpmap);
@@ -401,12 +401,12 @@ static void LoadShaderVariables() {
 // Display callback, renders the sphere
 static void Display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    shader->Enable();
+    shader.Enable();
     LoadShaderVariables();
     glBindVertexArray(d_vao);
     glDrawElements(GL_TRIANGLES, kNumIndices, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
-    shader->Disable();
+    shader.Disable();
 }
 
 // Resize callback
