@@ -29,10 +29,13 @@
 
 #include <glm/glm.hpp>
 
+/**
+ * Opengl shader abstraction
+ */
 class ShaderProgram {
 public:
     /**
-     * Loads, compiles and links the shader program
+     * Default constructor, does nothing
      */
     ShaderProgram();
 
@@ -75,6 +78,11 @@ public:
     void SetUniform(const std::string& name, const glm::vec3& value);
     void SetUniform(const std::string& name, const glm::vec4& value);
     void SetUniform(const std::string& name, const glm::mat4& value);
+
+    /**
+     * Binds a texture to a sampler
+     */
+    void SetTexture2D(const std::string& name, int sampler_id, int texture_id);
 
     /**
      * Obtains the shader program handle

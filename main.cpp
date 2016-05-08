@@ -35,8 +35,10 @@
 #include <lodepng.h>
 #include <tiny_obj_loader.h>
 
-#include "ShaderProgram.h"
 #include "Manipulator.h"
+#include "ShaderProgram.h"
+#include "VertexArray.h"
+#include "Texture2D.h"
 
 // Types
 struct Image {
@@ -63,26 +65,20 @@ struct Image {
 };
 
 // Constants
-static const int kWindowW = 1920;
-static const int kWindowH = 1080;
 static const int kN = 64;
 static const int kM = 64;
 static const int kNumIndices = 6 * (kN - 1) * (kM - 1);
 
-// Camera manipulator
-static Manipulator manipulator;
+// Window size
+static int window_w = 1920;
+static int window_h = 1080;
 
-// Device variables
+// Helpers
+static Manipulator manipulator;
 static ShaderProgram shader;
-static unsigned int d_vao = 0;
-static unsigned int d_indices = 0;
-static unsigned int d_vertices = 0;
-static unsigned int d_normals = 0;
-static unsigned int d_tangents = 0;
-static unsigned int d_binormals = 0;
-static unsigned int d_textcoords = 0;
-static unsigned int d_image = 0;
-static unsigned int d_bumpmap = 0;
+static VertexArray ball;
+static Texture2D image;
+static Texture2D bumpmap;
 
 // Matrices
 static glm::mat4 model;
@@ -104,10 +100,9 @@ static glm::vec3 diffuse;
 static glm::vec3 ambient;
 static glm::vec3 specular;
 static float shininess = 0.0f;
-static float rotation = 0.0f;
 
-// Verifies the condition, if the condition fails, shows the error
-// message and exits the program
+// Verifies the condition, if it fails, shows the error message and
+// exits the program
 #define Assert(condition, format, ...) { \
     if (!condition) { \
         auto finalformat = std::string("Error at function %s: ") \
@@ -126,6 +121,57 @@ static void CreateShader() {
     } catch (std::exception& e) {
         Assert(false, "%s", e.what());
     }
+}
+
+// Loads the street lamp
+static void LoadStreetLamp() {
+    auto inputfile = "data/lamp.obj";
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+
+    std::string err;
+    bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile, "data/");
+    Assert(err.empty() && ret, "tinyobj error: %s", err.c_str());
+
+    std::cout << "# of shapes    : " << shapes.size() << std::endl;
+    std::cout << "# of materials : " << materials.size() << std::endl;
+    for (size_t i = 0; i < shapes.size(); i++) {
+      printf("shape[%ld].name = %s\n", i, shapes[i].name.c_str());
+      printf("Size of shape[%ld].indices: %ld\n", i, shapes[i].mesh.indices.size());
+      printf("Size of shape[%ld].material_ids: %ld\n", i, shapes[i].mesh.material_ids.size());
+      assert((shapes[i].mesh.indices.size() % 3) == 0);
+
+      printf("shape[%ld].vertices: %ld\n", i, shapes[i].mesh.positions.size());
+      assert((shapes[i].mesh.positions.size() % 3) == 0);
+    }
+
+    for (size_t i = 0; i < materials.size(); i++) {
+      printf("material[%ld].name = %s\n", i, materials[i].name.c_str());
+      printf("  material.Ka = (%f, %f ,%f)\n", materials[i].ambient[0], materials[i].ambient[1], materials[i].ambient[2]);
+      printf("  material.Kd = (%f, %f ,%f)\n", materials[i].diffuse[0], materials[i].diffuse[1], materials[i].diffuse[2]);
+      printf("  material.Ks = (%f, %f ,%f)\n", materials[i].specular[0], materials[i].specular[1], materials[i].specular[2]);
+      printf("  material.Tr = (%f, %f ,%f)\n", materials[i].transmittance[0], materials[i].transmittance[1], materials[i].transmittance[2]);
+      printf("  material.Ke = (%f, %f ,%f)\n", materials[i].emission[0], materials[i].emission[1], materials[i].emission[2]);
+      printf("  material.Ns = %f\n", materials[i].shininess);
+      printf("  material.Ni = %f\n", materials[i].ior);
+      printf("  material.dissolve = %f\n", materials[i].dissolve);
+      printf("  material.illum = %d\n", materials[i].illum);
+      printf("  material.map_Ka = %s\n", materials[i].ambient_texname.c_str());
+      printf("  material.map_Kd = %s\n", materials[i].diffuse_texname.c_str());
+      printf("  material.map_Ks = %s\n", materials[i].specular_texname.c_str());
+      printf("  material.map_Ns = %s\n", materials[i].specular_highlight_texname.c_str());
+      std::map<std::string, std::string>::const_iterator it(materials[i].unknown_parameter.begin());
+      std::map<std::string, std::string>::const_iterator itEnd(materials[i].unknown_parameter.end());
+      for (; it != itEnd; it++) {
+        printf("  material.%s = %s\n", it->first.c_str(), it->second.c_str());
+      }
+      printf("\n");
+    }
+}
+
+// Loads the meshes
+static void CreateObjects() {
+    LoadStreetLamp();
 }
 
 // Creates the sphere coordinates based on a grid
@@ -189,119 +235,30 @@ static void CreateSphereCoordinates(std::vector< unsigned int >& indices,
     }
 } 
 
-// Creates an opengl array buffer
-template< typename T >
-static void CreateArrayBuffer(unsigned int* buffer, int location, int data_size,
-        int data_type, const std::vector< T >& data) {
-    glGenBuffers(1, buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, *buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(T) * data.size(), data.data(),
-            GL_STATIC_DRAW);
-    glEnableVertexAttribArray(location);
-    glVertexAttribPointer(location, data_size, data_type, false, 0, NULL);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-}
-
-// Creates the opengl buffers
-static void CreateVAO( const std::vector< unsigned int >& indices,
-                       const std::vector< float >& vertices,
-                       const std::vector< float >& normals,
-                       const std::vector< float >& tangents,
-                       const std::vector< float >& binormals,
-                       const std::vector< float >& textcoords) {
-    glGenVertexArrays(1, &d_vao);
-    glBindVertexArray(d_vao);
-
-    glGenBuffers(1, &d_indices);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, d_indices);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * kNumIndices,
-            indices.data(), GL_STATIC_DRAW);
-
-    CreateArrayBuffer(&d_vertices, 0, 3, GL_FLOAT, vertices);
-    CreateArrayBuffer(&d_normals, 1, 3, GL_FLOAT, normals);
-    CreateArrayBuffer(&d_tangents, 2, 3, GL_FLOAT, tangents);
-    CreateArrayBuffer(&d_binormals, 3, 3, GL_FLOAT, binormals);
-    CreateArrayBuffer(&d_textcoords, 4, 2, GL_FLOAT, textcoords);
-    
-    glBindVertexArray(0);
-}
-
-// Loads the street lamp
-static void LoadStreetLamp() {
-    auto inputfile = "data/lamp.obj";
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-
-    std::string err;
-    bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile, "data/");
-    Assert(err.empty() && ret, "tinyobj error: %s", err.c_str());
-
-    std::cout << "# of shapes    : " << shapes.size() << std::endl;
-    std::cout << "# of materials : " << materials.size() << std::endl;
-    for (size_t i = 0; i < shapes.size(); i++) {
-      printf("shape[%ld].name = %s\n", i, shapes[i].name.c_str());
-      printf("Size of shape[%ld].indices: %ld\n", i, shapes[i].mesh.indices.size());
-      printf("Size of shape[%ld].material_ids: %ld\n", i, shapes[i].mesh.material_ids.size());
-      assert((shapes[i].mesh.indices.size() % 3) == 0);
-
-      printf("shape[%ld].vertices: %ld\n", i, shapes[i].mesh.positions.size());
-      assert((shapes[i].mesh.positions.size() % 3) == 0);
-    }
-
-    for (size_t i = 0; i < materials.size(); i++) {
-      printf("material[%ld].name = %s\n", i, materials[i].name.c_str());
-      printf("  material.Ka = (%f, %f ,%f)\n", materials[i].ambient[0], materials[i].ambient[1], materials[i].ambient[2]);
-      printf("  material.Kd = (%f, %f ,%f)\n", materials[i].diffuse[0], materials[i].diffuse[1], materials[i].diffuse[2]);
-      printf("  material.Ks = (%f, %f ,%f)\n", materials[i].specular[0], materials[i].specular[1], materials[i].specular[2]);
-      printf("  material.Tr = (%f, %f ,%f)\n", materials[i].transmittance[0], materials[i].transmittance[1], materials[i].transmittance[2]);
-      printf("  material.Ke = (%f, %f ,%f)\n", materials[i].emission[0], materials[i].emission[1], materials[i].emission[2]);
-      printf("  material.Ns = %f\n", materials[i].shininess);
-      printf("  material.Ni = %f\n", materials[i].ior);
-      printf("  material.dissolve = %f\n", materials[i].dissolve);
-      printf("  material.illum = %d\n", materials[i].illum);
-      printf("  material.map_Ka = %s\n", materials[i].ambient_texname.c_str());
-      printf("  material.map_Kd = %s\n", materials[i].diffuse_texname.c_str());
-      printf("  material.map_Ks = %s\n", materials[i].specular_texname.c_str());
-      printf("  material.map_Ns = %s\n", materials[i].specular_highlight_texname.c_str());
-      std::map<std::string, std::string>::const_iterator it(materials[i].unknown_parameter.begin());
-      std::map<std::string, std::string>::const_iterator itEnd(materials[i].unknown_parameter.end());
-      for (; it != itEnd; it++) {
-        printf("  material.%s = %s\n", it->first.c_str(), it->second.c_str());
-      }
-      printf("\n");
-    }
-}
-
-// Loads the meshes
-static void CreateObjects() {
-    LoadStreetLamp();
-}
-
 // Creates the sphere
 static void CreateSphere() {
     std::vector< unsigned int > indices;
     std::vector< float > vertices, normals, tangents, binormals, textcoords;
     CreateSphereCoordinates(indices, vertices, normals, tangents, binormals,
             textcoords);
-    CreateVAO(indices, vertices, normals, tangents, binormals, textcoords);
+
+    ball.Init();
+    ball.SetElementArray(indices.data(), indices.size());
+    ball.AddArray(0, vertices.data(), vertices.size(), 3);
+    ball.AddArray(1, normals.data(), normals.size(), 3);
+    ball.AddArray(2, tangents.data(), tangents.size(), 3);
+    ball.AddArray(3, binormals.data(), binormals.size(), 3);
+    ball.AddArray(4, textcoords.data(), textcoords.size(), 2);
 }
 
-// Updates the variables that depend on the modelview and projection
+// Updates the variables that depend on the model, view and projection
 static void UpdateMatrices() {
+    model = manipulator.GetMatrix(glm::normalize(center - eye));
     view = glm::lookAt(eye, center, up);
-    view = view * manipulator.GetMatrix(glm::normalize(center - eye));
+    auto ratio = (float)window_w / (float)window_h;
+    projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
     mvp = projection * view * model;
     model_inv = glm::inverse(model);
-}
-
-// Creates the model, view and projection matrices
-static void CreateMatrices() {
-    int vp[4]; 
-    glGetIntegerv(GL_VIEWPORT, vp); 
-    auto ratio = (float)vp[2] / vp[3];
-    projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
-    model = glm::rotate(glm::radians(rotation), glm::vec3(0, 1, 0));
-    UpdateMatrices();
 }
 
 // Load a png image to memory
@@ -342,24 +299,13 @@ static Image CreateBumpMap(Image elevation) {
     return bump;
 }
 
-// Load an image into an opengl buffer
-static void LoadTexture(unsigned int *location, Image image) {
-    glGenTextures(1, location);
-    glBindTexture(GL_TEXTURE_2D, *location);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.w, image.h, 0,
-            GL_RGBA, GL_UNSIGNED_BYTE, image.data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-            GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glGenerateMipmap(GL_TEXTURE_2D);
-}
-
 // Loads the texture
 static void CreateTextures() {
-    LoadTexture(&d_image, LoadPNG(image_path));
-    LoadTexture(&d_bumpmap, CreateBumpMap(LoadPNG(hmap_path)));
+    auto LoadTexture = [](Texture2D* texture, Image image) {
+        texture->LoadTexture(image.data.data(), image.w, image.h);
+    };
+    LoadTexture(&image, LoadPNG(image_path));
+    LoadTexture(&bumpmap, CreateBumpMap(LoadPNG(hmap_path)));
 }
 
 // Loads the global opengl configuration
@@ -375,7 +321,7 @@ static void CreateScene() {
     CreateShader();
     CreateSphere();
     CreateTextures();
-    CreateMatrices();
+    UpdateMatrices();
 }
 
 // Loads the shader's uniform variables
@@ -388,14 +334,8 @@ static void LoadShaderVariables() {
     shader.SetUniform("ambient", ambient);
     shader.SetUniform("specular", specular);
     shader.SetUniform("shininess", shininess);
-
-    auto TextureToShader = [&](int n, const char *name, int bufferid) {
-        glActiveTexture(GL_TEXTURE0 + n);
-        glBindTexture(GL_TEXTURE_2D, bufferid);
-        shader.SetUniform(name, n);
-    };
-    TextureToShader(0, "image", d_image);
-    TextureToShader(1, "bumpmap", d_bumpmap);
+    shader.SetTexture2D("image", 0, image.GetId());
+    shader.SetTexture2D("bumpmap", 1, bumpmap.GetId());
 }
 
 // Display callback, renders the sphere
@@ -403,9 +343,7 @@ static void Display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     shader.Enable();
     LoadShaderVariables();
-    glBindVertexArray(d_vao);
-    glDrawElements(GL_TRIANGLES, kNumIndices, GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
+    ball.DrawElements(GL_TRIANGLES, kNumIndices, GL_UNSIGNED_INT);
     shader.Disable();
 }
 
@@ -413,9 +351,12 @@ static void Display() {
 static void Reshape(GLFWwindow *window) {
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
+    if (width == window_w && height == window_h)
+        return;
+
+    window_w = width;
+    window_h = height;
     glViewport(0, 0, width, height);
-    auto ratio = (float)width / (float)height;
-    projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
     UpdateMatrices();
 }
 
@@ -441,13 +382,13 @@ static void Mouse(GLFWwindow *window, int button, int action, int mods) {
     auto manip_button = (button == GLFW_MOUSE_BUTTON_LEFT) ? 0 :
                         (button == GLFW_MOUSE_BUTTON_RIGHT) ? 1 : -1;
     auto pressed = action == GLFW_PRESS;
-    manipulator.GlutMouse(manip_button, pressed, (int)x, (int)y);
+    manipulator.MouseClick(manip_button, pressed, (int)x, (int)y);
     UpdateMatrices();
 }
 
 // Motion callback
 static void Motion(GLFWwindow *window, double x, double y) {
-    manipulator.GlutMotion((int)x, (int)y);
+    manipulator.MouseMotion((int)x, (int)y);
     UpdateMatrices();
 }
 
@@ -469,7 +410,6 @@ static void LoadConfiguration(int argc, char *argv[]) {
     fscanf(f, "ambient: %f, %f, %f\n", &ambient.x, &ambient.y, &ambient.z);
     fscanf(f, "specular: %f, %f, %f\n", &specular.x, &specular.y, &specular.z);
     fscanf(f, "shininess: %f\n", &shininess);
-    fscanf(f, "rotation: %f\n", &rotation);
 
     fclose(f);
 }
@@ -478,7 +418,7 @@ static void LoadConfiguration(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
     // Init glfw
     Assert(glfwInit(), "glfw init failed", 0);
-    auto window = glfwCreateWindow(kWindowW, kWindowH, "OpenGL4 Application",
+    auto window = glfwCreateWindow(window_w, window_h, "OpenGL4 Application",
             nullptr, nullptr);
     Assert(window, "glfw window couldn't be created", 0);
     glfwMakeContextCurrent(window);

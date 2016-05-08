@@ -34,13 +34,13 @@
 Manipulator::Manipulator() :
     reference_(0, 0, 0),
     matrix_(1.0),
-    inv_(1.0),
-    operation_{Operation::kNone},
-    x_{0},
-    y_{0},
+    operation_(Operation::kNone),
+    x_(0),
+    y_(0),
     v_(0, 0, 0),
-    invertX_{false},
-    invertY_{false} {
+    invertX_(false),
+    invertY_(false),
+    ball_size_(2.0f) {
 }
 
 glm::mat4 Manipulator::GetMatrix(const glm::vec3& look_dir) {
@@ -59,17 +59,8 @@ glm::mat4 Manipulator::GetMatrix(const glm::vec3& look_dir) {
            * glm::translate(-reference_);
 }
 
-glm::mat4 Manipulator::GetInverse() {
-    return glm::translate(-reference_) * matrix_ * glm::translate(reference_);
-}
-
 void Manipulator::SetReferencePoint(float x, float y, float z) {
     reference_ = glm::vec3(x, y, z);
-}
-
-void Manipulator::GlutMouse(int button, int pressed, int x, int y) {
-    SetOperation<0, Operation::kRotation>(button, pressed, x, y);
-    SetOperation<1, Operation::kZoom>(button, pressed, x, y);
 }
 
 void Manipulator::SetInvertAxis(bool invertX, bool invertY) {
@@ -77,14 +68,19 @@ void Manipulator::SetInvertAxis(bool invertX, bool invertY) {
     invertY_ = invertY;
 }
 
-void Manipulator::GlutMotion(int x, int y) {
+void Manipulator::MouseClick(int button, int pressed, int x, int y) {
+    SetOperation<0, Operation::kRotation>(button, pressed, x, y);
+    SetOperation<1, Operation::kZoom>(button, pressed, x, y);
+}
+
+void Manipulator::MouseMotion(int x, int y) {
     if (operation_ == Operation::kNone)
         return;
 
     if (operation_ == Operation::kRotation) {
         glm::vec3 v = computeSphereCoordinates(x, y);
         glm::vec3 w = glm::cross(v_, v);
-        float theta = asin(glm::length(w));
+        float theta = asin(glm::length(w)) * ball_size_;
         if (theta != 0)
             matrix_ = glm::rotate(theta, w) * matrix_;
         v_ = v;
@@ -97,7 +93,6 @@ void Manipulator::GlutMotion(int x, int y) {
         matrix_ = glm::scale(glm::vec3(scale, scale, scale)) * matrix_;
     }
 
-    inv_ = glm::inverse(matrix_);
     x_ = x;
     y_ = y;
 }
@@ -125,7 +120,7 @@ glm::vec3 Manipulator::computeSphereCoordinates(int x, int y) {
     if (invertX_) x = w - x;
     if (invertY_) y = h - y;
 
-    const float radius = std::min(w / 2.0f, h / 2.0f);
+    const float radius = std::min(w / 2.0f, h / 2.0f) * ball_size_;
     float vx = (x - w / 2.0f) / radius;
     float vy = (h - y - h / 2.0f) / radius;
     float vz = 0;

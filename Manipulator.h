@@ -29,6 +29,9 @@
 
 #include <glm/glm.hpp>
 
+/**
+ * Arcball manipulatior
+ */
 class Manipulator {
 public:
     /**
@@ -38,13 +41,9 @@ public:
     
     /**
      * Accumulates the manipulator matrix
+     * look_dir should be 'center - eye' passed to lookAt matrix
      */
     glm::mat4 GetMatrix(const glm::vec3& look_dir = glm::vec3(0, 0, -1));
-
-    /**
-     * Accumulates the inverse of the manipulator matrix
-     */
-    glm::mat4 GetInverse();
 
     /**
      * Sets the reference point (world center)
@@ -58,13 +57,14 @@ public:
 
     /**
      * Mouse button function
+     * left button = 0; right button = 1
      */
-    void GlutMouse(int button, int pressed, int x, int y);
+    void MouseClick(int button, int pressed, int x, int y);
 
     /**
      * Mouse motion function
      */
-    void GlutMotion(int x, int y);
+    void MouseMotion(int x, int y);
 
 private:
     enum class Operation {
@@ -84,11 +84,11 @@ private:
 
     glm::vec3 reference_;
     glm::mat4 matrix_;
-    glm::mat4 inv_;
     Operation operation_;
     float x_, y_;
     glm::vec3 v_;
     bool invertX_, invertY_;
+    float ball_size_;
 };
 
 #endif
