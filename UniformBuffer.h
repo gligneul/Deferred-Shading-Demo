@@ -22,36 +22,58 @@
  * SOFTWARE.
  */
 
-#ifndef MATERIALS_H
-#define MATERIALS_H
+#ifndef UNIFORMBUFFER_H
+#define UNIFORMBUFFER_H
 
 #include <vector>
 
+#include <glm/glm.hpp>
+
 /**
- * UBO containing an array of materials
+ * std140 uniform buffer
  */
-class Materials {
+class UniforBuffer {
 public:
     /**
      * Default constructor
      */
-    Materials();
+    UniforBuffer();
 
     /**
      * Destructor
      */
-    ~Materials();
+    ~UniforBuffer();
 
     /**
-     * Adds a material to the buffer
+     * Creates the uniform buffer
      */
-    void Add(float dr, float dg, float db, float ar, float ag, float ab,
-             float sr, float sg, float sb, float shininess);
+    void Init();
+    
+    /**
+     * Adds an element to the buffer
+     */
+    template<typename T>
+    void Add(T element);
+
+    /**
+     * Adds a vetor/matrix to the buffer
+     */
+    template<typename T>
+    void Add(T *elements, int n);
+    void Add(glm::vec3 element);
+    void Add(glm::vec4 element);
+    void Add(glm::mat4 element);
+
+    /**
+     * Complete the current chunk
+     * Should be used when finishing an element of an array
+     */
+    void FinishChunk();
 
     /**
      * Sends the buffer to the gpu
      */
-    void Reload();
+    void SendToDevice();
 
     /**
      * Obtains the buffer id
@@ -59,17 +81,20 @@ public:
     unsigned int GetId();
 
 private:
-    struct Material {
-        float diffuse[3];
-        float padding0; // std140 padding
-        float ambient[3];
-        float padding1; // std140 padding
-        float specular[3];
-        float shininess;
-    };
+    /**
+     * Adds some memory data to the buffer
+     */
+    void AddToBuffer(void *data, int size);
+
+    /**
+     * Verifies if the element fits in the current chunk
+     * If not, fills it and start another
+     */
+    void CheckChunk(int n);
 
     unsigned int ubo_;
-    std::vector<Material> materials_;
+    std::vector<unsigned char> buffer_;
+    int padding_;
 };
 
 #endif

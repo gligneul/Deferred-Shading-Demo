@@ -36,10 +36,10 @@
 #include <tiny_obj_loader.h>
 
 #include "Manipulator.h"
-#include "Materials.h"
 #include "ShaderProgram.h"
-#include "VertexArray.h"
 #include "Texture2D.h"
+#include "UniformBuffer.h"
+#include "VertexArray.h"
 
 // Constants
 static const int kN = 64;
@@ -52,7 +52,7 @@ static int window_h = 1080;
 // Helpers
 static Manipulator manipulator;
 static ShaderProgram shader;
-static Materials materials;
+static UniforBuffer materials;
 static VertexArray lamp_base;
 static VertexArray lamp_body;
 static VertexArray lamp_light;
@@ -105,25 +105,27 @@ static void LoadShader() {
 
 // Loads the materials
 static void LoadMaterials() {
-    materials.Add(
-        0.2, 0.2, 0.2,
-        0.1, 0.1, 0.1,
-        0.7, 0.7, 0.7,
-        64
-    );
-    materials.Add(
-        0.0, 0.0, 0.0,
-        10., 10., 10.,
-        0.0, 0.0, 0.0,
-        1
-    );
-    materials.Add(
-        0.46, 0.54, 0.23,
-        0.23, 0.27, 0.12,
-        0.1, 0.1, 0.1,
-        1
-    );
-    materials.Reload();
+    materials.Init();
+
+    materials.Add({0.2, 0.2, 0.2});
+    materials.Add({0.1, 0.1, 0.1});
+    materials.Add({0.7, 0.7, 0.7});
+    materials.Add(64.0f);
+    materials.FinishChunk();
+
+    materials.Add({0.0, 0.0, 0.0});
+    materials.Add({10., 10., 10.});
+    materials.Add({0.0, 0.0, 0.0});
+    materials.Add(0.0f);
+    materials.FinishChunk();
+
+    materials.Add({0.46, 0.54, 0.23});
+    materials.Add({0.23, 0.27, 0.12});
+    materials.Add({0.1, 0.1, 0.1});
+    materials.Add(16.0f);
+    materials.FinishChunk();
+
+    materials.SendToDevice();
 }
 
 // Loads the quad that represents the floor
