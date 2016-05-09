@@ -40,34 +40,9 @@
 #include "VertexArray.h"
 #include "Texture2D.h"
 
-// Types
-struct Image {
-    std::vector<unsigned char> data;
-    unsigned int w, h;
-
-    // Obtains a pixel
-    glm::vec4 get(int i, int j) {
-        return {
-            data[0 + i * 4 + j * w * 4] / 255.0f,
-            data[1 + i * 4 + j * w * 4] / 255.0f,
-            data[2 + i * 4 + j * w * 4] / 255.0f,
-            data[3 + i * 4 + j * w * 4] / 255.0f,
-        };
-    }
-
-    // Defines a pixel
-    void set(int i, int j, glm::vec4 v) {
-        data[0 + i * 4 + j * w * 4] = v.x * 255.0f;
-        data[1 + i * 4 + j * w * 4] = v.y * 255.0f;
-        data[2 + i * 4 + j * w * 4] = v.z * 255.0f;
-        data[3 + i * 4 + j * w * 4] = v.w * 255.0f;
-    }
-};
-
 // Constants
 static const int kN = 64;
 static const int kM = 64;
-static const int kNumIndices = 6 * (kN - 1) * (kM - 1);
 
 // Window size
 static int window_w = 1920;
@@ -76,30 +51,30 @@ static int window_h = 1080;
 // Helpers
 static Manipulator manipulator;
 static ShaderProgram shader;
-static VertexArray ball;
-static Texture2D image;
-static Texture2D bumpmap;
+static VertexArray lamp_base;
+static VertexArray lamp_body;
+static VertexArray lamp_light;
+static VertexArray ground;
 
 // Matrices
 static glm::mat4 model;
+static glm::mat4 model_invt;
 static glm::mat4 view;
 static glm::mat4 projection;
 static glm::mat4 mvp;
-static glm::mat4 model_inv;
+static glm::vec3 eye_pos;
 
 // Configurable variables
-static char vertex_shader[128] = {0};
-static char fragment_shader[128] = {0};
-static char image_path[128] = {0};
-static char hmap_path[128] = {0};
-static glm::vec3 eye;
-static glm::vec3 center;
-static glm::vec3 up;
-static glm::vec4 light;
-static glm::vec3 diffuse;
-static glm::vec3 ambient;
-static glm::vec3 specular;
-static float shininess = 0.0f;
+static glm::vec3 eye(0.0, 5.0, 15.0);
+static glm::vec3 center(0.0, 5.0, 0.0);
+static glm::vec3 up(0.0, 1.0, 0.0);
+static glm::vec4 light(0.6, 9.5, 0.0, 1.0);
+static glm::vec3 diffuse(0.7, 0.7, 0.7);
+static glm::vec3 ambient(0.2, 0.2, 0.2);
+static glm::vec3 specular(1.0, 1.0, 1.0);
+static float shininess = 150.0f;
+
+// 186,218,95
 
 // Verifies the condition, if it fails, shows the error message and
 // exits the program
@@ -113,19 +88,49 @@ static float shininess = 0.0f;
 }
 
 // Loads the shader
-static void CreateShader() {
+static void LoadShader() {
     try {
-        shader.LoadVertexShader(vertex_shader);
-        shader.LoadFragmentShader(fragment_shader);
+        shader.LoadVertexShader("shaders/deferred1_vs.glsl");
+        shader.LoadFragmentShader("shaders/deferred1_fs.glsl");
         shader.LinkShader();
     } catch (std::exception& e) {
         Assert(false, "%s", e.what());
     }
 }
 
+static void LoadFloor() {
+    unsigned int indices[] = {0, 1, 2, 3};
+    float h = -0.1;
+    float v = 1e5;
+    float vertices[] = {
+        -v, h, v,
+        -v, h, -v,
+        v, h, -v,
+        v, h, v
+    };
+    float normals[] = {
+        0, 1, 0,
+        0, 1, 0,
+        0, 1, 0,
+        0, 1, 0
+    };
+    ground.Init();
+    ground.SetElementArray(indices, 4);
+    ground.AddArray(0, vertices, 12, 3);
+    ground.AddArray(1, normals, 12, 3);
+}
+
+// Loads a single mesh into the gpu
+static void LoadMesh(VertexArray* vao, tinyobj::mesh_t *mesh) {
+    vao->Init();
+    vao->SetElementArray(mesh->indices.data(), mesh->indices.size());
+    vao->AddArray(0, mesh->positions.data(), mesh->positions.size(), 3);
+    vao->AddArray(1, mesh->normals.data(), mesh->positions.size(), 3);
+}
+
 // Loads the street lamp
 static void LoadStreetLamp() {
-    auto inputfile = "data/lamp.obj";
+    auto inputfile = "data/street_lamp.obj";
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
 
@@ -133,209 +138,43 @@ static void LoadStreetLamp() {
     bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile, "data/");
     Assert(err.empty() && ret, "tinyobj error: %s", err.c_str());
 
-    std::cout << "# of shapes    : " << shapes.size() << std::endl;
-    std::cout << "# of materials : " << materials.size() << std::endl;
-    for (size_t i = 0; i < shapes.size(); i++) {
-      printf("shape[%ld].name = %s\n", i, shapes[i].name.c_str());
-      printf("Size of shape[%ld].indices: %ld\n", i, shapes[i].mesh.indices.size());
-      printf("Size of shape[%ld].material_ids: %ld\n", i, shapes[i].mesh.material_ids.size());
-      assert((shapes[i].mesh.indices.size() % 3) == 0);
-
-      printf("shape[%ld].vertices: %ld\n", i, shapes[i].mesh.positions.size());
-      assert((shapes[i].mesh.positions.size() % 3) == 0);
-    }
-
-    for (size_t i = 0; i < materials.size(); i++) {
-      printf("material[%ld].name = %s\n", i, materials[i].name.c_str());
-      printf("  material.Ka = (%f, %f ,%f)\n", materials[i].ambient[0], materials[i].ambient[1], materials[i].ambient[2]);
-      printf("  material.Kd = (%f, %f ,%f)\n", materials[i].diffuse[0], materials[i].diffuse[1], materials[i].diffuse[2]);
-      printf("  material.Ks = (%f, %f ,%f)\n", materials[i].specular[0], materials[i].specular[1], materials[i].specular[2]);
-      printf("  material.Tr = (%f, %f ,%f)\n", materials[i].transmittance[0], materials[i].transmittance[1], materials[i].transmittance[2]);
-      printf("  material.Ke = (%f, %f ,%f)\n", materials[i].emission[0], materials[i].emission[1], materials[i].emission[2]);
-      printf("  material.Ns = %f\n", materials[i].shininess);
-      printf("  material.Ni = %f\n", materials[i].ior);
-      printf("  material.dissolve = %f\n", materials[i].dissolve);
-      printf("  material.illum = %d\n", materials[i].illum);
-      printf("  material.map_Ka = %s\n", materials[i].ambient_texname.c_str());
-      printf("  material.map_Kd = %s\n", materials[i].diffuse_texname.c_str());
-      printf("  material.map_Ks = %s\n", materials[i].specular_texname.c_str());
-      printf("  material.map_Ns = %s\n", materials[i].specular_highlight_texname.c_str());
-      std::map<std::string, std::string>::const_iterator it(materials[i].unknown_parameter.begin());
-      std::map<std::string, std::string>::const_iterator itEnd(materials[i].unknown_parameter.end());
-      for (; it != itEnd; it++) {
-        printf("  material.%s = %s\n", it->first.c_str(), it->second.c_str());
-      }
-      printf("\n");
-    }
-}
-
-// Loads the meshes
-static void CreateObjects() {
-    LoadStreetLamp();
-}
-
-// Creates the sphere coordinates based on a grid
-static void CreateSphereCoordinates(std::vector< unsigned int >& indices,
-                                    std::vector< float >& vertices,
-                                    std::vector< float >& normals,
-                                    std::vector< float >& tangents,
-                                    std::vector< float >& binormals,
-                                    std::vector< float >& textcoords) {
-    for (int i = 0; i < kN; ++i) {
-        for (int j = 0; j < kM; ++j) {
-            const float pi = M_PI;
-            float s = (float)i / (kN - 1);
-            float t = (float)j / (kM - 1);
-            float theta = (1 - t) * pi;
-            float phi = (1 - s) * 2.0f * pi;
-            float x = sin(theta) * cos(phi);
-            float y = cos(theta);
-            float z = sin(theta) * sin(phi);
-            auto tangent = glm::normalize(glm::vec3(
-                -2 * pi * sin(2 * pi * s) * sin(pi * t),
-                0,
-                -2 * pi * cos(2 * pi * s) * sin(pi * t)
-            ));
-            auto binormal = glm::normalize(glm::vec3(
-                pi * cos(2 * pi * s) * cos(pi * t),
-                pi * sin(pi * t),
-                -pi * sin(2 * pi * s) * cos(pi * t)
-            ));
-            auto normal = glm::normalize(glm::vec3(x, y, z));
-            vertices.push_back(x);
-            vertices.push_back(y);
-            vertices.push_back(z);
-            normals.push_back(normal.x);
-            normals.push_back(normal.y);
-            normals.push_back(normal.z);
-            tangents.push_back(tangent.x);
-            tangents.push_back(tangent.y);
-            tangents.push_back(tangent.z);
-            binormals.push_back(binormal.x);
-            binormals.push_back(binormal.y);
-            binormals.push_back(binormal.z);
-            textcoords.push_back(s);
-            textcoords.push_back(t);
-        }
-    }
-
-    auto Index = [&](int i, int j) {
-        return j + i * kM;
-    };
-
-    for (int i = 0; i < kN - 1; ++i) {
-        for (int j = 0; j < kM - 1; ++j) {
-            indices.push_back(Index(i, j));
-            indices.push_back(Index(i, j + 1));
-            indices.push_back(Index(i + 1, j));
-            indices.push_back(Index(i + 1, j));
-            indices.push_back(Index(i, j + 1));
-            indices.push_back(Index(i + 1, j + 1));
-        }
-    }
-} 
-
-// Creates the sphere
-static void CreateSphere() {
-    std::vector< unsigned int > indices;
-    std::vector< float > vertices, normals, tangents, binormals, textcoords;
-    CreateSphereCoordinates(indices, vertices, normals, tangents, binormals,
-            textcoords);
-
-    ball.Init();
-    ball.SetElementArray(indices.data(), indices.size());
-    ball.AddArray(0, vertices.data(), vertices.size(), 3);
-    ball.AddArray(1, normals.data(), normals.size(), 3);
-    ball.AddArray(2, tangents.data(), tangents.size(), 3);
-    ball.AddArray(3, binormals.data(), binormals.size(), 3);
-    ball.AddArray(4, textcoords.data(), textcoords.size(), 2);
+    LoadMesh(&lamp_base, &shapes[0].mesh);
+    LoadMesh(&lamp_light, &shapes[1].mesh);
+    LoadMesh(&lamp_body, &shapes[2].mesh);
 }
 
 // Updates the variables that depend on the model, view and projection
 static void UpdateMatrices() {
-    model = manipulator.GetMatrix(glm::normalize(center - eye));
+    manipulator.SetReferencePoint(center.x, center.y, center.z);
+    model_invt = glm::transpose(glm::inverse(model));
     view = glm::lookAt(eye, center, up);
+    view *= manipulator.GetMatrix(glm::normalize(center - eye));
     auto ratio = (float)window_w / (float)window_h;
-    projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
+    projection = glm::perspective(glm::radians(60.0f), ratio, 1.0f, 100.0f);
     mvp = projection * view * model;
-    model_inv = glm::inverse(model);
-}
-
-// Load a png image to memory
-static Image LoadPNG(const char* path) {
-    Image image;
-    unsigned int error = lodepng::decode(image.data, image.w, image.h, path);
-    Assert(!error, "lodepng error: %s", lodepng_error_text(error));
-    for (unsigned int i = 0; i < image.w; ++i) {
-        for (unsigned int j = 0; j < image.h / 2; ++j) {
-            auto top = image.get(i, j);
-            auto bottomidx = image.h - 1 - j;
-            auto bottom = image.get(i, bottomidx);
-            image.set(i, j, bottom);
-            image.set(i, bottomidx, top);
-        }
-    }
-    return image;
-}
-
-// Create a bump map based on elevation map
-static Image CreateBumpMap(Image elevation) {
-    Image bump;
-    bump.w = elevation.w - 1;
-    bump.h = elevation.h - 1;
-    bump.data.resize(4 * bump.w * bump.h);
-    for (unsigned int i = 0; i < bump.w; ++i) {
-        for (unsigned int j = 0; j < bump.h; ++j) {
-            float e00 = elevation.get(i, j).x;
-            float e01 = elevation.get(i, j + 1).x;
-            float e10 = elevation.get(i + 1, j).x;
-            glm::vec3 nv(0, 1, e01 - e00);
-            glm::vec3 nh(1, 0, e10 - e00);
-            auto n = normalize(glm::cross(nh, nv));
-            auto c = n / 2.0f + 0.5f;
-            bump.set(i, j, glm::vec4(c, 1));
-        }
-    }
-    return bump;
-}
-
-// Loads the texture
-static void CreateTextures() {
-    auto LoadTexture = [](Texture2D* texture, Image image) {
-        texture->LoadTexture(image.data.data(), image.w, image.h);
-    };
-    LoadTexture(&image, LoadPNG(image_path));
-    LoadTexture(&bumpmap, CreateBumpMap(LoadPNG(hmap_path)));
+    auto view_inv = glm::inverse(view);
+    eye_pos = glm::vec3(view_inv * glm::vec4());
 }
 
 // Loads the global opengl configuration
 static void LoadGlobalConfiguration() {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0, 0, 0, 1);
-}
-
-// Loads the shader and creates the sphere
-static void CreateScene() {
-    LoadGlobalConfiguration();
-    CreateObjects();
-    CreateShader();
-    CreateSphere();
-    CreateTextures();
-    UpdateMatrices();
+    glClearColor(0.02, 0.01, 0.10, 1);
+    glfwWindowHint(GLFW_SAMPLES, 8);
+    glEnable(GL_MULTISAMPLE);
 }
 
 // Loads the shader's uniform variables
 static void LoadShaderVariables() {
     shader.SetUniform("mvp", mvp);
-    shader.SetUniform("model_inv", model_inv);
+    shader.SetUniform("model", model);
+    shader.SetUniform("model_invt", model_invt);
     shader.SetUniform("light_pos", light);
-    shader.SetUniform("eye_pos", eye);
+    shader.SetUniform("eye_pos", eye_pos);
     shader.SetUniform("diffuse", diffuse);
     shader.SetUniform("ambient", ambient);
     shader.SetUniform("specular", specular);
     shader.SetUniform("shininess", shininess);
-    shader.SetTexture2D("image", 0, image.GetId());
-    shader.SetTexture2D("bumpmap", 1, bumpmap.GetId());
 }
 
 // Display callback, renders the sphere
@@ -343,7 +182,17 @@ static void Display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     shader.Enable();
     LoadShaderVariables();
-    ball.DrawElements(GL_TRIANGLES, kNumIndices, GL_UNSIGNED_INT);
+
+    shader.SetUniform("material_id", 4);
+    ground.DrawElements(GL_QUADS);
+
+    shader.SetUniform("material_id", 0);
+    lamp_base.DrawElements(GL_TRIANGLES);
+    shader.SetUniform("material_id", 1);
+    lamp_body.DrawElements(GL_TRIANGLES);
+    shader.SetUniform("material_id", 10);
+    lamp_light.DrawElements(GL_TRIANGLES);
+
     shader.Disable();
 }
 
@@ -392,28 +241,6 @@ static void Motion(GLFWwindow *window, double x, double y) {
     UpdateMatrices();
 }
 
-// Loads the configuration file
-static void LoadConfiguration(int argc, char *argv[]) {
-    const char *config_file = argc > 1 ? argv[1] : "config.txt";
-    FILE *f = fopen(config_file, "r");
-    Assert(f, "cannot open configuration file %s", config_file);
-
-    fscanf(f, "vertex_shader: %127s\n", vertex_shader);
-    fscanf(f, "fragment_shader: %127s\n", fragment_shader);
-    fscanf(f, "image_path: %127s\n", image_path);
-    fscanf(f, "hmap_path: %127s\n", hmap_path);
-    fscanf(f, "eye: %f, %f, %f\n", &eye.x, &eye.y, &eye.z);
-    fscanf(f, "center: %f, %f, %f\n", &center.x, &center.y, &center.z);
-    fscanf(f, "up: %f, %f, %f\n", &up.x, &up.y, &up.z);
-    fscanf(f, "light: %f, %f, %f, %f\n", &light.x, &light.y, &light.z, &light.w);
-    fscanf(f, "diffuse: %f, %f, %f\n", &diffuse.x, &diffuse.y, &diffuse.z);
-    fscanf(f, "ambient: %f, %f, %f\n", &ambient.x, &ambient.y, &ambient.z);
-    fscanf(f, "specular: %f, %f, %f\n", &specular.x, &specular.y, &specular.z);
-    fscanf(f, "shininess: %f\n", &shininess);
-
-    fclose(f);
-}
-
 // Initialization
 int main(int argc, char *argv[]) {
     // Init glfw
@@ -431,8 +258,11 @@ int main(int argc, char *argv[]) {
     Assert(!glew_error, "GLEW error: %s", glewGetErrorString(glew_error));
 
     // Init application
-    LoadConfiguration(argc, argv);
-    CreateScene();
+    LoadGlobalConfiguration();
+    LoadFloor();
+    LoadStreetLamp();
+    LoadShader();
+    UpdateMatrices();
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {

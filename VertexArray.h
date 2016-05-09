@@ -64,11 +64,13 @@ public:
     /**
      * Draws the vao
      */
-    void DrawElements(int primitive, int count, int type);
+    void DrawElements(int primitive);
 
 private:
     unsigned int vao_;
     std::vector<unsigned int> arrays_;
+    unsigned int n_indices_;
+    unsigned int type_;
 };
 
 #endif

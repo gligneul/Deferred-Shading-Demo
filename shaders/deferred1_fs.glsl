@@ -24,36 +24,43 @@
 
 #version 450
 
-uniform mat4 mvp;
-uniform mat4 model_inv;
+uniform vec3 diffuse;
+uniform vec3 ambient;
+uniform vec3 specular;
+uniform float shininess;
+
+uniform int material_id;
 uniform vec4 light_pos;
 uniform vec3 eye_pos;
 
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec3 normal;
-layout(location = 2) in vec3 tangent;
-layout(location = 3) in vec3 binormal;
-layout(location = 4) in vec2 textcoord;
+in vec3 frag_position;
+in vec3 frag_normal;
 
-out vec2 frag_mapcoord;
-out vec3 frag_light_dir;
-out vec3 frag_half_vector;
+out vec3 frag_color;
 
-vec3 get_dir_ms(vec4 v_gs) {
-    vec4 v_ms4 = model_inv * v_gs;
-    vec3 v_ms = v_ms4.xyz / v_ms4.w;
-    return normalize(v_ms - position);
+vec3 compute_diffuse(vec3 normal, vec3 light_dir) {
+    return diffuse * max(dot(normal, light_dir), 0);
+}
+
+vec3 compute_specular(vec3 normal, vec3 light_dir, vec3 half_vector) {
+    if (dot(normal, light_dir) > 0)
+        return specular * pow(max(dot(normal, half_vector), 0), shininess);
+    else
+        return vec3(0, 0, 0);
 }
 
 void main() {
-    vec3 eye_dir = get_dir_ms(vec4(eye_pos, 1));
-    vec3 light_dir = get_dir_ms(light_pos);
+    vec3 normal = normalize(frag_normal);
+    vec3 eye_dir = normalize(eye_pos - frag_position);
+    vec3 light_dir = normalize(light_pos.xyz / light_pos.w - frag_position);
     vec3 half_vector = normalize(light_dir + eye_dir);
-    mat3 rotation = transpose(mat3(tangent, binormal, normal));
 
-    gl_Position = mvp * vec4(position, 1);
-    frag_mapcoord = textcoord;
-    frag_light_dir = normalize(rotation * light_dir);
-    frag_half_vector = normalize(rotation * half_vector);
+    vec3 diffuse = compute_diffuse(normal, light_dir);
+    vec3 specular = compute_specular(normal, light_dir, half_vector);
+
+    float gray = float(material_id + 1) / 5.0;
+    vec3 color = vec3(gray, gray, gray);
+
+    frag_color = (diffuse + ambient) * color + specular;
 }
 

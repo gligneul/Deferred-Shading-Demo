@@ -29,7 +29,9 @@
 #include "VertexArray.h"
 
 VertexArray::VertexArray() :
-    vao_(0) {
+    vao_(0),
+    n_indices_(0),
+    type_(0) {
 }
 
 VertexArray::~VertexArray() {
@@ -52,6 +54,10 @@ void VertexArray::SetElementArray(const T *array, int n) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(T) * n, array, GL_STATIC_DRAW);
     glBindVertexArray(0);
     arrays_.push_back(id);
+    n_indices_ = n;
+    type_ = std::is_same<T, unsigned int>::value   ? GL_UNSIGNED_INT :
+            std::is_same<T, unsigned short>::value ? GL_UNSIGNED_SHORT :
+            std::is_same<T, unsigned char>::value  ? GL_UNSIGNED_BYTE : 0;
 }
 
 template<typename T>
@@ -74,9 +80,9 @@ void VertexArray::AddArray(int location, const T *array, int n,
     arrays_.push_back(id);
 }
 
-void VertexArray::DrawElements(int primitive, int count, int type) {
+void VertexArray::DrawElements(int primitive) {
     glBindVertexArray(vao_);
-    glDrawElements(primitive, count, type, 0);
+    glDrawElements(primitive, n_indices_, type_, 0);
     glBindVertexArray(0);
 }
 

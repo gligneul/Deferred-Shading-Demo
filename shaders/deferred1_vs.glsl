@@ -25,36 +25,20 @@
 #version 450
 
 uniform mat4 mvp;
-uniform mat4 model_inv;
-uniform vec4 light_pos;
-uniform vec3 eye_pos;
+uniform mat4 model;
+uniform mat4 model_invt;
 
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec3 normal;
-layout(location = 2) in vec3 tangent;
-layout(location = 3) in vec3 binormal;
-layout(location = 4) in vec2 textcoord;
+layout(location = 0) in vec4 position;
+layout(location = 1) in vec4 normal;
 
-out vec2 frag_mapcoord;
+out vec3 frag_position;
 out vec3 frag_normal;
-out vec3 frag_light_dir;
-out vec3 frag_half_vector;
-
-vec3 get_dir_ms(vec4 v_gs) {
-    vec4 v_ms4 = model_inv * v_gs;
-    vec3 v_ms = v_ms4.xyz / v_ms4.w;
-    return normalize(v_ms - position);
-}
 
 void main() {
-    vec3 eye_dir = get_dir_ms(vec4(eye_pos, 1));
-    vec3 light_dir = get_dir_ms(light_pos);
-    vec3 half_vector = normalize(light_dir + eye_dir);
+    gl_Position = mvp * position;
 
-    gl_Position = mvp * vec4(position, 1);
-    frag_mapcoord = textcoord;
-    frag_normal = normal;
-    frag_light_dir = light_dir;
-    frag_half_vector = half_vector;
+    // Shading at world space
+    frag_position = vec3(model * position);
+    frag_normal = normalize(vec3(model_invt * normal));
 }
 
