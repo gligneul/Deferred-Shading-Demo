@@ -85,6 +85,12 @@ public:
     void SetTexture2D(const std::string& name, int sampler_id, int texture_id);
 
     /**
+     * Binds an uniform buffer
+     */
+    void SetUniformBuffer(const std::string& name, int binding_point,
+                          unsigned int buffer_id);
+
+    /**
      * Obtains the shader program handle
      */
     unsigned int GetHandle();

@@ -24,10 +24,20 @@
 
 #version 450
 
-uniform vec3 diffuse;
-uniform vec3 ambient;
-uniform vec3 specular;
-uniform float shininess;
+uniform vec3 l_diffuse;
+uniform vec3 l_ambient;
+uniform vec3 l_specular;
+
+struct Material {
+    vec3 diffuse;
+    vec3 ambient;
+    vec3 specular;
+    float shininess;
+};
+
+layout (std140) uniform MaterialsBlock {
+    Material materials[8];
+};
 
 uniform int material_id;
 uniform vec4 light_pos;
@@ -39,14 +49,26 @@ in vec3 frag_normal;
 out vec3 frag_color;
 
 vec3 compute_diffuse(vec3 normal, vec3 light_dir) {
+    vec3 diffuse = materials[material_id].diffuse * l_diffuse;
+//    vec3 diffuse = l_diffuse;
     return diffuse * max(dot(normal, light_dir), 0);
 }
 
 vec3 compute_specular(vec3 normal, vec3 light_dir, vec3 half_vector) {
-    if (dot(normal, light_dir) > 0)
+    if (dot(normal, light_dir) > 0) {
+        vec3 specular = materials[material_id].specular * l_specular;
+//        vec3 specular = l_specular;
+        float shininess = materials[material_id].shininess;
+//        float shininess = 1;
         return specular * pow(max(dot(normal, half_vector), 0), shininess);
-    else
+    } else {
         return vec3(0, 0, 0);
+    }
+}
+
+vec3 compute_ambient() {
+    return materials[material_id].ambient * l_ambient;
+//    return l_ambient;
 }
 
 void main() {
@@ -57,10 +79,8 @@ void main() {
 
     vec3 diffuse = compute_diffuse(normal, light_dir);
     vec3 specular = compute_specular(normal, light_dir, half_vector);
+    vec3 ambient = compute_ambient();
 
-    float gray = float(material_id + 1) / 5.0;
-    vec3 color = vec3(gray, gray, gray);
-
-    frag_color = (diffuse + ambient) * color + specular;
+    frag_color = (diffuse + ambient) + specular;
 }
 

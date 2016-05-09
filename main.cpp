@@ -36,6 +36,7 @@
 #include <tiny_obj_loader.h>
 
 #include "Manipulator.h"
+#include "Materials.h"
 #include "ShaderProgram.h"
 #include "VertexArray.h"
 #include "Texture2D.h"
@@ -51,6 +52,7 @@ static int window_h = 1080;
 // Helpers
 static Manipulator manipulator;
 static ShaderProgram shader;
+static Materials materials;
 static VertexArray lamp_base;
 static VertexArray lamp_body;
 static VertexArray lamp_light;
@@ -72,9 +74,12 @@ static glm::vec4 light(0.6, 9.5, 0.0, 1.0);
 static glm::vec3 diffuse(0.7, 0.7, 0.7);
 static glm::vec3 ambient(0.2, 0.2, 0.2);
 static glm::vec3 specular(1.0, 1.0, 1.0);
-static float shininess = 150.0f;
 
-// 186,218,95
+enum MaterialID {
+    MATERIAL_METAL,
+    MATERIAL_LAMP,
+    MATERIAL_GROUND
+};
 
 // Verifies the condition, if it fails, shows the error message and
 // exits the program
@@ -98,7 +103,31 @@ static void LoadShader() {
     }
 }
 
-static void LoadFloor() {
+// Loads the materials
+static void LoadMaterials() {
+    materials.Add(
+        0.2, 0.2, 0.2,
+        0.1, 0.1, 0.1,
+        0.7, 0.7, 0.7,
+        64
+    );
+    materials.Add(
+        0.0, 0.0, 0.0,
+        10., 10., 10.,
+        0.0, 0.0, 0.0,
+        1
+    );
+    materials.Add(
+        0.46, 0.54, 0.23,
+        0.23, 0.27, 0.12,
+        0.1, 0.1, 0.1,
+        1
+    );
+    materials.Reload();
+}
+
+// Loads the quad that represents the floor
+static void LoadGround() {
     unsigned int indices[] = {0, 1, 2, 3};
     float h = -0.1;
     float v = 1e5;
@@ -171,10 +200,10 @@ static void LoadShaderVariables() {
     shader.SetUniform("model_invt", model_invt);
     shader.SetUniform("light_pos", light);
     shader.SetUniform("eye_pos", eye_pos);
-    shader.SetUniform("diffuse", diffuse);
-    shader.SetUniform("ambient", ambient);
-    shader.SetUniform("specular", specular);
-    shader.SetUniform("shininess", shininess);
+    shader.SetUniform("l_diffuse", diffuse);
+    shader.SetUniform("l_ambient", ambient);
+    shader.SetUniform("l_specular", specular);
+    shader.SetUniformBuffer("MaterialsBlock", 0, materials.GetId());
 }
 
 // Display callback, renders the sphere
@@ -183,14 +212,12 @@ static void Display() {
     shader.Enable();
     LoadShaderVariables();
 
-    shader.SetUniform("material_id", 4);
+    shader.SetUniform("material_id", MATERIAL_GROUND);
     ground.DrawElements(GL_QUADS);
-
-    shader.SetUniform("material_id", 0);
+    shader.SetUniform("material_id", MATERIAL_METAL);
     lamp_base.DrawElements(GL_TRIANGLES);
-    shader.SetUniform("material_id", 1);
     lamp_body.DrawElements(GL_TRIANGLES);
-    shader.SetUniform("material_id", 10);
+    shader.SetUniform("material_id", MATERIAL_LAMP);
     lamp_light.DrawElements(GL_TRIANGLES);
 
     shader.Disable();
@@ -259,7 +286,8 @@ int main(int argc, char *argv[]) {
 
     // Init application
     LoadGlobalConfiguration();
-    LoadFloor();
+    LoadMaterials();
+    LoadGround();
     LoadStreetLamp();
     LoadShader();
     UpdateMatrices();
