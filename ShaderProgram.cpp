@@ -129,7 +129,6 @@ void ShaderProgram::SetUniformBuffer(const std::string& name, int binding_point,
                                      unsigned int buffer_id) {
     auto block_index = glGetUniformBlockIndex(program_, name.c_str());
     glUniformBlockBinding(program_, block_index, binding_point);
-    glBindBuffer(GL_UNIFORM_BUFFER, buffer_id);
     glBindBufferBase(GL_UNIFORM_BUFFER, binding_point, buffer_id);
 }
 
