@@ -84,23 +84,28 @@ unsigned int UniforBuffer::GetId() {
     return ubo_;
 }
 
-void UniforBuffer::CheckChunk(int n) {
-    if (padding_ + n > 16)
-        FinishChunk();
+void UniforBuffer::Clear() {
+    buffer_.clear();
 }
 
 void UniforBuffer::AddToBuffer(void *data, int size) {
     int glsl_size = (size >= 4) ? size : 4;
     unsigned char bytes[size];
-    CheckChunk(glsl_size);
+
+    if (padding_ + size > 16)
+        FinishChunk();
+
     memcpy(bytes, data, size);
     for (int i = 0; i < size; ++i)
         buffer_.push_back(bytes[i]);
+
     for (int i = size; i < glsl_size; ++i)
         buffer_.push_back(0);
+
     padding_ = (padding_ + glsl_size) % 16;
 }
 
+template void UniforBuffer::Add(bool);
 template void UniforBuffer::Add(int);
 template void UniforBuffer::Add(float);
 template void UniforBuffer::Add(float *, int);

@@ -80,17 +80,16 @@ public:
      */
     unsigned int GetId();
 
+    /**
+     * Limpa o buffer da cpu
+     */
+    void Clear();
+
 private:
     /**
      * Adds some memory data to the buffer
      */
     void AddToBuffer(void *data, int size);
-
-    /**
-     * Verifies if the element fits in the current chunk
-     * If not, fills it and start another
-     */
-    void CheckChunk(int n);
 
     unsigned int ubo_;
     std::vector<unsigned char> buffer_;

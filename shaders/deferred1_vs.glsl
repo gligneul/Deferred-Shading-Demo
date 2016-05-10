@@ -25,8 +25,8 @@
 #version 450
 
 uniform mat4 mvp;
-uniform mat4 model;
-uniform mat4 model_invt;
+uniform mat4 modelview;
+uniform mat4 normalmatrix;
 
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec4 normal;
@@ -36,9 +36,7 @@ out vec3 frag_normal;
 
 void main() {
     gl_Position = mvp * position;
-
-    // Shading at world space
-    frag_position = vec3(model * position);
-    frag_normal = normalize(vec3(model_invt * normal));
+    frag_position = vec3(modelview * position);
+    frag_normal = normalize(vec3(normalmatrix * normal));
 }
 

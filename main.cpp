@@ -41,9 +41,23 @@
 #include "UniformBuffer.h"
 #include "VertexArray.h"
 
-// Constants
-static const int kN = 64;
-static const int kM = 64;
+// Materials
+enum MaterialID {
+    MATERIAL_METAL,
+    MATERIAL_LAMP,
+    MATERIAL_GROUND
+};
+
+// Lights
+struct Light {
+    glm::vec4 position;
+    glm::vec3 diffuse;
+    glm::vec3 specular;
+    bool is_spot;
+    glm::vec3 spot_direction;
+    float spot_cutoff;
+    float spot_exponent;
+} lights_info[100];
 
 // Window size
 static int window_w = 1920;
@@ -53,6 +67,7 @@ static int window_h = 1080;
 static Manipulator manipulator;
 static ShaderProgram shader;
 static UniforBuffer materials;
+static UniforBuffer lights;
 static VertexArray lamp_base;
 static VertexArray lamp_body;
 static VertexArray lamp_light;
@@ -60,26 +75,16 @@ static VertexArray ground;
 
 // Matrices
 static glm::mat4 model;
-static glm::mat4 model_invt;
 static glm::mat4 view;
 static glm::mat4 projection;
 static glm::mat4 mvp;
-static glm::vec3 eye_pos;
+static glm::mat4 modelview;
+static glm::mat4 normalmatrix;
 
-// Configurable variables
+// Camera configuration
 static glm::vec3 eye(0.0, 5.0, 15.0);
 static glm::vec3 center(0.0, 5.0, 0.0);
 static glm::vec3 up(0.0, 1.0, 0.0);
-static glm::vec4 light(0.6, 9.5, 0.0, 1.0);
-static glm::vec3 diffuse(0.7, 0.7, 0.7);
-static glm::vec3 ambient(0.2, 0.2, 0.2);
-static glm::vec3 specular(1.0, 1.0, 1.0);
-
-enum MaterialID {
-    MATERIAL_METAL,
-    MATERIAL_LAMP,
-    MATERIAL_GROUND
-};
 
 // Verifies the condition, if it fails, shows the error message and
 // exits the program
@@ -104,7 +109,7 @@ static void LoadShader() {
 }
 
 // Loads the materials
-static void LoadMaterials() {
+static void CreateMaterials() {
     materials.Init();
 
     materials.Add({0.2, 0.2, 0.2});
@@ -114,7 +119,7 @@ static void LoadMaterials() {
     materials.FinishChunk();
 
     materials.Add({0.0, 0.0, 0.0});
-    materials.Add({10., 10., 10.});
+    materials.Add({3.0, 3.0, 2.9});
     materials.Add({0.0, 0.0, 0.0});
     materials.Add(0.0f);
     materials.FinishChunk();
@@ -126,6 +131,44 @@ static void LoadMaterials() {
     materials.FinishChunk();
 
     materials.SendToDevice();
+}
+
+// Updates the lights buffer
+static void UpdateLightsBuffer() {
+    lights.Clear();
+
+    lights.Add({0.2, 0.2, 0.2});
+    lights.Add(1);
+    lights.FinishChunk();
+
+    auto view_invt = glm::transpose(glm::inverse(view));
+    auto spot_dir_world_space = glm::vec4(lights_info[0].spot_direction, 1);
+    auto spot_dir = glm::normalize(glm::vec3(view_invt * spot_dir_world_space));
+
+    lights.Add(view * lights_info[0].position);
+    lights.Add(lights_info[0].diffuse);
+    lights.Add(lights_info[0].specular);
+    lights.Add(lights_info[0].is_spot);
+    lights.Add(spot_dir);
+    lights.Add(lights_info[0].spot_cutoff);
+    lights.Add(lights_info[0].spot_exponent);
+    lights.FinishChunk();
+
+    lights.SendToDevice();
+}
+
+// Creates the lights
+static void CreateLights() {
+    lights_info[0].position = glm::vec4(0.6, 10, 0.0, 1.0);
+    lights_info[0].diffuse = glm::vec3(0.5, 0.5, 0.5);
+    lights_info[0].specular = glm::vec3(0.5, 0.5, 0.5);
+    lights_info[0].is_spot = true;
+    lights_info[0].spot_direction = glm::vec3(0.0, -1.0, 0.0);
+    lights_info[0].spot_cutoff = glm::radians(45.0f);
+    lights_info[0].spot_exponent = 16;
+
+    lights.Init();
+    UpdateLightsBuffer();
 }
 
 // Loads the quad that represents the floor
@@ -176,15 +219,19 @@ static void LoadStreetLamp() {
 
 // Updates the variables that depend on the model, view and projection
 static void UpdateMatrices() {
-    manipulator.SetReferencePoint(center.x, center.y, center.z);
-    model_invt = glm::transpose(glm::inverse(model));
+    model = glm::mat4();
+
     view = glm::lookAt(eye, center, up);
-    view *= manipulator.GetMatrix(glm::normalize(center - eye));
+    view = view * manipulator.GetMatrix(glm::normalize(center - eye));
+    manipulator.SetReferencePoint(center.x, center.y, center.z);
+
     auto ratio = (float)window_w / (float)window_h;
     projection = glm::perspective(glm::radians(60.0f), ratio, 1.0f, 100.0f);
+
     mvp = projection * view * model;
-    auto view_inv = glm::inverse(view);
-    eye_pos = glm::vec3(view_inv * glm::vec4());
+
+    modelview = view * model;
+    normalmatrix = glm::transpose(glm::inverse(modelview));
 }
 
 // Loads the global opengl configuration
@@ -198,20 +245,17 @@ static void LoadGlobalConfiguration() {
 // Loads the shader's uniform variables
 static void LoadShaderVariables() {
     shader.SetUniform("mvp", mvp);
-    shader.SetUniform("model", model);
-    shader.SetUniform("model_invt", model_invt);
-    shader.SetUniform("light_pos", light);
-    shader.SetUniform("eye_pos", eye_pos);
-    shader.SetUniform("l_diffuse", diffuse);
-    shader.SetUniform("l_ambient", ambient);
-    shader.SetUniform("l_specular", specular);
+    shader.SetUniform("modelview", modelview);
+    shader.SetUniform("normalmatrix", normalmatrix);
     shader.SetUniformBuffer("MaterialsBlock", 0, materials.GetId());
+    shader.SetUniformBuffer("LightsBlock", 1, lights.GetId());
 }
 
 // Display callback, renders the sphere
 static void Display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     shader.Enable();
+    UpdateLightsBuffer();
     LoadShaderVariables();
 
     shader.SetUniform("material_id", MATERIAL_GROUND);
@@ -223,6 +267,20 @@ static void Display() {
     lamp_light.DrawElements(GL_TRIANGLES);
 
     shader.Disable();
+}
+
+// Measures the frames per second (and prints in the terminal)
+static void ComputeFPS() {
+    static double last = glfwGetTime();
+    static int frames = 0;
+    double curr = glfwGetTime();
+    if (curr - last > 1.0) {
+        printf("fps: %d\n", frames);
+        last += 1.0;
+        frames = 0;
+    } else {
+        frames++;
+    }
 }
 
 // Resize callback
@@ -288,7 +346,8 @@ int main(int argc, char *argv[]) {
 
     // Init application
     LoadGlobalConfiguration();
-    LoadMaterials();
+    CreateMaterials();
+    CreateLights();
     LoadGround();
     LoadStreetLamp();
     LoadShader();
@@ -298,6 +357,7 @@ int main(int argc, char *argv[]) {
     while (!glfwWindowShouldClose(window)) {
         Reshape(window);
         Display();
+        ComputeFPS();
         glfwSwapBuffers(window);
         glfwPollEvents();
     };
