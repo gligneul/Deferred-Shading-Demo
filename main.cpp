@@ -36,23 +36,21 @@
 #include <tiny_obj_loader.h>
 
 #include "ShaderProgram.h"
-#include "Texture2D.h"
 #include "UniformBuffer.h"
 #include "VertexArray.h"
 
 // Materials
 enum MaterialID {
-    MATERIAL_METAL,
-    MATERIAL_LAMP,
-    MATERIAL_GROUND
+    BEAR_MATERIAL,
+    GROUND_MATERIAL
 };
 
 // Scene configuration constants
-static const int I_OFFSET = 10;
-static const int J_OFFSET = 10;
-static const int N_LAMPS_I = 10;
-static const int N_LAMPS_J = 10;
-static const int N_LAMPS = N_LAMPS_I * N_LAMPS_J;
+static const int I_OFFSET = 15;
+static const int J_OFFSET = 15;
+static const int N_LIGHTS_I = 8;
+static const int N_LIGHTS_J = 8;
+static const int N_LIGHTS = N_LIGHTS_I * N_LIGHTS_J;
 
 // Window size
 static int window_w = 1920;
@@ -63,23 +61,23 @@ static ShaderProgram shader;
 static UniformBuffer materials;
 static UniformBuffer lights;
 
-// Lamp mesh
-static UniformBuffer lamp_matrices;
-static VertexArray lamp_base;
-static VertexArray lamp_body;
-static VertexArray lamp_light;
+// Bear mesh
+static UniformBuffer bear_matrices;
+static VertexArray bear_mesh;
 
 // Ground quad
 static UniformBuffer ground_matrices;
 static VertexArray ground;
 
 // Global matrices
-static glm::mat4 rotation;
 static glm::mat4 view;
 static glm::mat4 projection;
 
+// Lights rotation
+static glm::mat4 rotation;
+
 // Random colors
-static glm::vec3 random_colors[N_LAMPS];
+static glm::vec3 random_colors[N_LIGHTS];
 
 // Camera config
 #if 1
@@ -87,7 +85,7 @@ static glm::vec3 eye(0.0, 100.0, 0.0);
 static glm::vec3 center(0.0, 0.0, 0.0);
 static glm::vec3 up(0.0, 0.0, 1.0);
 #else
-static glm::vec3 eye(-10.0, 20.0, -10.0);
+static glm::vec3 eye(-20.0, 20.0, -20.0);
 static glm::vec3 center(0, 0, 0);
 static glm::vec3 up(0.0, 1.0, 0.0);
 #endif
@@ -122,12 +120,12 @@ static double Random() {
 
 // Creates the random colors
 static void CreateRandomColors() {
-    for (int i = 0; i < N_LAMPS; ++i)
+    for (int i = 0; i < N_LIGHTS; ++i)
         random_colors[i] = glm::vec3(Random(), Random(), Random());
 }
 
 // Loads the materials
-static void CreateMaterials() {
+static void CreateMaterialsBuffer() {
     // Buffer configuration
     // struct Material {
     //     vec3 diffuse;
@@ -142,24 +140,17 @@ static void CreateMaterials() {
 
     materials.Init();
 
-    // MATERIAL_METAL
-    materials.Add({0.2, 0.2, 0.2});
-    materials.Add({0.1, 0.1, 0.1});
-    materials.Add({0.7, 0.7, 0.7});
-    materials.Add(64.0f);
-    materials.FinishChunk();
-
-    // MATERIAL_LAMP
-    materials.Add({0.0, 0.0, 0.0});
-    materials.Add({3.0, 3.0, 2.9});
-    materials.Add({0.0, 0.0, 0.0});
-    materials.Add(0.0f);
-    materials.FinishChunk();
-
-    // MATERIAL_GROUND
+    // BEAR_MATERIAL
     materials.Add({0.70, 0.70, 0.70});
+    materials.Add({0.50, 0.50, 0.50});
+    materials.Add({0.50, 0.50, 0.50});
+    materials.Add(16.0f);
+    materials.FinishChunk();
+
+    // GROUND_MATERIAL
+    materials.Add({0.50, 0.50, 0.50});
+    materials.Add({0.50, 0.50, 0.50});
     materials.Add({0.20, 0.20, 0.20});
-    materials.Add({0.10, 0.10, 0.10});
     materials.Add(16.0f);
     materials.FinishChunk();
 
@@ -168,69 +159,12 @@ static void CreateMaterials() {
 
 // Compute the light translation given the i, j indices
 static glm::mat4 ComputeTranslation(int i, int j) {
-    auto x = (i - (N_LAMPS_I - 1) / 2.0) * I_OFFSET;
-    auto z = (j - (N_LAMPS_J - 1) / 2.0) * J_OFFSET;
+    auto x = (i - (N_LIGHTS_I - 1) / 2.0) * I_OFFSET;
+    auto z = (j - (N_LIGHTS_J - 1) / 2.0) * J_OFFSET;
     return glm::translate(glm::vec3(x, 0, z));
 }
 
-// Updates the lights buffer
-static void UpdateLightsBuffer() {
-    // Buffer configuration
-    // struct Light {
-    //     vec4 position;
-    //     vec3 diffuse;
-    //     vec3 specular;
-    //     bool is_spot;
-    //     vec3 spot_direction;
-    //     float spot_cutoff;
-    //     float spot_exponent;
-    // };
-    // 
-    // layout (std140) uniform LightsBlock {
-    //     vec3 global_ambient;
-    //     int n_lights;
-    //     Light lights[100];
-    // };
-
-    auto position = glm::vec4(0.6, 10, 0.0, 1.0);
-    auto specular = glm::vec3(0.5, 0.5, 0.5);
-    auto is_spot = true;
-    auto spot_direction = glm::vec3(0.0, -1.0, 0.0);
-    auto spot_cutoff = glm::radians(45.0f);
-    auto spot_exponent = 16.0f;
-
-    if (!lights.GetId())
-        lights.Init();
-    else
-        lights.Clear();
-
-    lights.Add({0.2, 0.2, 0.2});
-    lights.Add(N_LAMPS);
-    lights.FinishChunk();
-
-    for (int i = 0; i < N_LAMPS_I; ++i) {
-        for (int j = 0; j < N_LAMPS_J; ++j) {
-            auto model = rotation * ComputeTranslation(i, j);
-            auto modelview = view * model;
-            auto normalmatrix = glm::transpose(glm::inverse(modelview));
-            auto spot_dir_ws = glm::vec4(spot_direction, 1);
-            auto spot_dir_vs = glm::normalize(
-                    glm::vec3(normalmatrix * spot_dir_ws));
-            lights.Add(modelview * position);
-            lights.Add(random_colors[i + N_LAMPS_I * j]);
-            lights.Add(specular);
-            lights.Add(is_spot);
-            lights.Add(spot_dir_vs);
-            lights.Add(spot_cutoff);
-            lights.Add(spot_exponent);
-            lights.FinishChunk();
-        }
-    }
-
-    lights.SendToDevice();
-}
-
-// Loads the quad that represents the floor
+// Loads the ground quad
 static void LoadGround() {
     unsigned int indices[] = {0, 1, 2, 3};
     float h = -0.1;
@@ -258,26 +192,84 @@ static void LoadMesh(VertexArray* vao, tinyobj::mesh_t *mesh) {
     vao->Init();
     vao->SetElementArray(mesh->indices.data(), mesh->indices.size());
     vao->AddArray(0, mesh->positions.data(), mesh->positions.size(), 3);
-    vao->AddArray(1, mesh->normals.data(), mesh->positions.size(), 3);
+    vao->AddArray(1, mesh->normals.data(), mesh->normals.size(), 3);
 }
 
-// Loads the street lamp
-static void LoadStreetLamp() {
-    auto inputfile = "data/street_lamp.obj";
+// Loads the bear mesh
+static void LoadBearMesh() {
+    auto inputfile = "data/bear-obj.obj";
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
 
     std::string err;
     bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile, "data/");
-    Assertf(err.empty() && ret, "tinyobj error: %s", err.c_str());
+    Assertf(err.empty() && !ret, "tinyobj error: %s", err.c_str());
 
-    LoadMesh(&lamp_base, &shapes[0].mesh);
-    LoadMesh(&lamp_light, &shapes[1].mesh);
-    LoadMesh(&lamp_body, &shapes[2].mesh);
+    LoadMesh(&bear_mesh, &shapes[0].mesh);
 }
 
-// Creates the lamps instances
-void UpdateLampMatrices() {
+// Updates the lights buffer
+static void UpdateLightsBuffer() {
+    // Buffer configuration
+    // struct Light {
+    //     vec4 position;
+    //     vec3 diffuse;
+    //     vec3 specular;
+    //     bool is_spot;
+    //     vec3 spot_direction;
+    //     float spot_cutoff;
+    //     float spot_exponent;
+    // };
+    // 
+    // layout (std140) uniform LightsBlock {
+    //     vec3 global_ambient;
+    //     int n_lights;
+    //     Light lights[100];
+    // };
+
+
+    if (!lights.GetId())
+        lights.Init();
+    else
+        lights.Clear();
+
+    lights.Add({0.2, 0.2, 0.2});
+    lights.Add(N_LIGHTS);
+    lights.FinishChunk();
+
+    for (int i = 0; i < N_LIGHTS_I; ++i) {
+        for (int j = 0; j < N_LIGHTS_J; ++j) {
+            auto position = glm::vec4(0.0, 10, 0.0, 1.0);
+            auto diffuse = random_colors[i + N_LIGHTS_I * j];
+            auto specular = glm::vec3(0.5, 0.5, 0.5);
+            auto is_spot = true;
+            auto spot_direction = glm::vec3(0.0, -1.0, 0.0);
+            auto spot_cutoff = glm::radians(45.0f);
+            auto spot_exponent = 16.0f;
+
+            auto model = rotation * ComputeTranslation(i, j);
+            auto modelview = view * model;
+            auto normalmatrix = glm::transpose(glm::inverse(modelview));
+            auto spot_dir_ws = glm::vec4(spot_direction, 1);
+            auto spot_dir_vs = glm::normalize(
+                    glm::vec3(normalmatrix * spot_dir_ws));
+
+            lights.Add(modelview * position);
+            lights.Add(diffuse);
+            lights.Add(specular);
+            lights.Add(is_spot);
+            lights.Add(spot_dir_vs);
+            lights.Add(spot_cutoff);
+            lights.Add(spot_exponent);
+            lights.FinishChunk();
+        }
+    }
+
+    lights.SendToDevice();
+}
+
+// Creates the bear instances matrices
+static void UpdateBearMatrices() {
     // Buffer configuration:
     // struct Matrices {
     //     mat4 mvp;
@@ -289,28 +281,30 @@ void UpdateLampMatrices() {
     //     Matrices matrices[100];
     // };
 
-    if (!lamp_matrices.GetId())
-        lamp_matrices.Init();
+    if (!bear_matrices.GetId())
+        bear_matrices.Init();
     else
-        lamp_matrices.Clear();
+        bear_matrices.Clear();
 
-    for (int i = 0; i < N_LAMPS_I; ++i) {
-        for (int j = 0; j < N_LAMPS_J; ++j) {
-            auto model = ComputeTranslation(i, j);
+    for (int i = 0; i < N_LIGHTS_I; ++i) {
+        for (int j = 0; j < N_LIGHTS_J; ++j) {
+            float theta = random_colors[i + j * N_LIGHTS_I].x * 2.0 * M_PI;
+            auto rotation = glm::rotate(theta, glm::vec3(0, 1, 0));
+            auto model = ComputeTranslation(i, j) * rotation;
             auto modelview = view * model;
             auto normalmatrix = glm::transpose(glm::inverse(modelview));
             auto mvp = projection * modelview;
-            lamp_matrices.Add(mvp);
-            lamp_matrices.Add(modelview);
-            lamp_matrices.Add(normalmatrix);
+            bear_matrices.Add(mvp);
+            bear_matrices.Add(modelview);
+            bear_matrices.Add(normalmatrix);
         }
     }
 
-    lamp_matrices.SendToDevice();
+    bear_matrices.SendToDevice();
 }
 
 // Creates a single ground instance
-void UpdateGroundMatrices() {
+static void UpdateGroundMatrices() {
     // Buffer configuration:
     // struct Matrices {
     //     mat4 mvp;
@@ -342,19 +336,16 @@ void UpdateGroundMatrices() {
 // Updates the variables that depend on the model, view and projection
 static void UpdateMatrices() {
     view = glm::lookAt(eye, center, up);
-
     auto ratio = (float)window_w / (float)window_h;
     projection = glm::perspective(glm::radians(60.0f), ratio, 1.5f, 300.0f);
-
-    UpdateLampMatrices();
+    UpdateBearMatrices();
     UpdateGroundMatrices();
 }
 
 // Loads the global opengl configuration
 static void LoadGlobalConfiguration() {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.02, 0.01, 0.10, 1);
-
+    glClearColor(1.000, 0.996, 0.894, 1);
     glfwWindowHint(GLFW_SAMPLES, 8);
     glEnable(GL_MULTISAMPLE);
 }
@@ -369,15 +360,12 @@ static void Display() {
     shader.SetUniformBuffer("LightsBlock", 1, lights.GetId());
 
     shader.SetUniformBuffer("MatricesBlock", 2, ground_matrices.GetId());
-    shader.SetUniform("material_id", MATERIAL_GROUND);
+    shader.SetUniform("material_id", GROUND_MATERIAL);
     ground.DrawElements(GL_QUADS);
 
-    shader.SetUniformBuffer("MatricesBlock", 2, lamp_matrices.GetId());
-    shader.SetUniform("material_id", MATERIAL_METAL);
-    lamp_base.DrawInstances(GL_TRIANGLES, N_LAMPS);
-    lamp_body.DrawInstances(GL_TRIANGLES, N_LAMPS);
-    shader.SetUniform("material_id", MATERIAL_LAMP);
-    lamp_light.DrawInstances(GL_TRIANGLES, N_LAMPS);
+    shader.SetUniformBuffer("MatricesBlock", 2, bear_matrices.GetId());
+    shader.SetUniform("material_id", BEAR_MATERIAL);
+    bear_mesh.DrawInstances(GL_TRIANGLES, N_LIGHTS);
 
     shader.Disable();
 }
@@ -396,8 +384,8 @@ static void ComputeFPS() {
     }
 }
 
-// Resize callback
-static void Reshape(GLFWwindow *window) {
+// Updates the window size
+static void Resize(GLFWwindow *window) {
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
     if (width == window_w && height == window_h)
@@ -432,12 +420,10 @@ static void Keyboard(GLFWwindow* window, int key, int scancode, int action,
 static void Mouse(GLFWwindow *window, int button, int action, int mods) {
     double x, y;
     glfwGetCursorPos(window, &x, &y);
-    UpdateMatrices();
 }
 
 // Motion callback
 static void Motion(GLFWwindow *window, double x, double y) {
-    UpdateMatrices();
 }
 
 // Initialization
@@ -459,15 +445,14 @@ int main(int argc, char *argv[]) {
     // Init application
     LoadGlobalConfiguration();
     CreateRandomColors();
-    CreateMaterials();
+    CreateMaterialsBuffer();
     LoadGround();
-    LoadStreetLamp();
+    LoadBearMesh();
     LoadShader();
-    UpdateMatrices();
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
-        Reshape(window);
+        Resize(window);
         Idle();
         UpdateMatrices();
         Display();
