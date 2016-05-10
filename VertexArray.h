@@ -66,6 +66,11 @@ public:
      */
     void DrawElements(int primitive);
 
+    /**
+     * Draws the $n instances of the vao
+     */
+    void DrawInstances(int primitive, int n);
+
 private:
     unsigned int vao_;
     std::vector<unsigned int> arrays_;

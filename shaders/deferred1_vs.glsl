@@ -24,19 +24,30 @@
 
 #version 450
 
-uniform mat4 mvp;
-uniform mat4 modelview;
-uniform mat4 normalmatrix;
+// Matrices information
+struct Matrices {
+    mat4 mvp;
+    mat4 modelview;
+    mat4 normalmatrix;
+};
 
+layout (std140) uniform MatricesBlock {
+    Matrices matrices[100];
+};
+
+// Mesh input
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec4 normal;
 
+// Vertex output
 out vec3 frag_position;
 out vec3 frag_normal;
+out vec2 frag_textcoord;
 
 void main() {
-    gl_Position = mvp * position;
-    frag_position = vec3(modelview * position);
-    frag_normal = normalize(vec3(normalmatrix * normal));
+    Matrices M = matrices[gl_InstanceID];
+    gl_Position = M.mvp * position;
+    frag_position = vec3(M.modelview * position);
+    frag_normal = normalize(vec3(M.normalmatrix * normal));
 }
 

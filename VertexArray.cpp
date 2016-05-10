@@ -86,12 +86,18 @@ void VertexArray::DrawElements(int primitive) {
     glBindVertexArray(0);
 }
 
-template void VertexArray::SetElementArray(const unsigned int *array, int n);
-template void VertexArray::SetElementArray(const unsigned short *array, int n);
-template void VertexArray::SetElementArray(const unsigned char *array, int n);
-template void VertexArray::AddArray(int location, const float *array, int n, int n_elements);
-template void VertexArray::AddArray(int location, const int *array, int n, int n_elements);
-template void VertexArray::AddArray(int location, const unsigned int *array, int n, int n_elements);
-template void VertexArray::AddArray(int location, const char *array, int n, int n_elements);
-template void VertexArray::AddArray(int location, const unsigned char *array, int n, int n_elements);
+void VertexArray::DrawInstances(int primitive, int n) {
+    glBindVertexArray(vao_);
+    glDrawElementsInstanced(primitive, n_indices_, type_, 0, n);
+    glBindVertexArray(0);
+}
+
+template void VertexArray::SetElementArray(const unsigned int *, int);
+template void VertexArray::SetElementArray(const unsigned short *, int);
+template void VertexArray::SetElementArray(const unsigned char *, int);
+template void VertexArray::AddArray(int, const float *, int, int);
+template void VertexArray::AddArray(int, const int *, int, int);
+template void VertexArray::AddArray(int, const unsigned int *, int, int);
+template void VertexArray::AddArray(int, const char *, int, int);
+template void VertexArray::AddArray(int, const unsigned char *, int, int);
 

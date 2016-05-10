@@ -29,43 +29,43 @@
 
 #include "UniformBuffer.h"
 
-UniforBuffer::UniforBuffer() :
+UniformBuffer::UniformBuffer() :
     ubo_(0),
     padding_(0) {
 }
 
-UniforBuffer::~UniforBuffer() {
+UniformBuffer::~UniformBuffer() {
     if (ubo_)
         glDeleteBuffers(1, &ubo_);
 }
 
-void UniforBuffer::Init() {
+void UniformBuffer::Init() {
     glGenBuffers(1, &ubo_);
 }
 
 template<typename T>
-void UniforBuffer::Add(T element) {
+void UniformBuffer::Add(T element) {
     AddToBuffer(&element, sizeof(T));
 }
 
 template<typename T>
-void UniforBuffer::Add(T *elements, int n) {
+void UniformBuffer::Add(T *elements, int n) {
     AddToBuffer(elements, n * sizeof(T));
 }
 
-void UniforBuffer::Add(glm::vec3 element) {
+void UniformBuffer::Add(glm::vec3 element) {
     AddToBuffer(glm::value_ptr(element), 3 * sizeof(float));
 }
 
-void UniforBuffer::Add(glm::vec4 element) {
+void UniformBuffer::Add(glm::vec4 element) {
     AddToBuffer(glm::value_ptr(element), 4 * sizeof(float));
 }
 
-void UniforBuffer::Add(glm::mat4 element) {
+void UniformBuffer::Add(glm::mat4 element) {
     AddToBuffer(glm::value_ptr(element), 16 * sizeof(float));
 }
 
-void UniforBuffer::FinishChunk() {
+void UniformBuffer::FinishChunk() {
     if (padding_ == 0)
         return;
     for (int i = padding_; i < 16; ++i)
@@ -73,22 +73,22 @@ void UniforBuffer::FinishChunk() {
     padding_ = 0;
 }
 
-void UniforBuffer::SendToDevice() {
+void UniformBuffer::SendToDevice() {
     glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
     glBufferData(GL_UNIFORM_BUFFER, buffer_.size(), buffer_.data(),
             GL_DYNAMIC_DRAW);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-unsigned int UniforBuffer::GetId() {
+unsigned int UniformBuffer::GetId() {
     return ubo_;
 }
 
-void UniforBuffer::Clear() {
+void UniformBuffer::Clear() {
     buffer_.clear();
 }
 
-void UniforBuffer::AddToBuffer(void *data, int size) {
+void UniformBuffer::AddToBuffer(void *data, int size) {
     int glsl_size = (size >= 4) ? size : 4;
     unsigned char bytes[size];
 
@@ -105,7 +105,7 @@ void UniforBuffer::AddToBuffer(void *data, int size) {
     padding_ = (padding_ + glsl_size) % 16;
 }
 
-template void UniforBuffer::Add(bool);
-template void UniforBuffer::Add(int);
-template void UniforBuffer::Add(float);
-template void UniforBuffer::Add(float *, int);
+template void UniformBuffer::Add(bool);
+template void UniformBuffer::Add(int);
+template void UniformBuffer::Add(float);
+template void UniformBuffer::Add(float *, int);

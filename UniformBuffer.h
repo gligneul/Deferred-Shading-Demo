@@ -32,17 +32,17 @@
 /**
  * std140 uniform buffer
  */
-class UniforBuffer {
+class UniformBuffer {
 public:
     /**
      * Default constructor
      */
-    UniforBuffer();
+    UniformBuffer();
 
     /**
      * Destructor
      */
-    ~UniforBuffer();
+    ~UniformBuffer();
 
     /**
      * Creates the uniform buffer
