@@ -24,6 +24,11 @@
 
 #version 450
 
+// Geometry pass inputs
+uniform sampler2D position_sampler;
+uniform sampler2D normal_sampler;
+uniform sampler2D material_sampler;
+
 // Lights information
 struct Light {
     vec4 position;
@@ -53,24 +58,22 @@ layout (std140) uniform MaterialsBlock {
     Material materials[8];
 };
 
-uniform int material_id;
+// Screen texture coordinates
+in vec2 frag_textcoord;
 
-// Input from vertex shader
-in vec3 frag_position;
-in vec3 frag_normal;
+// Output color
+out vec3 color;
 
-// Fragment shader output
-out vec3 frag_color;
-
-vec3 compute_diffuse(Light L, vec3 normal, vec3 light_dir) {
-    vec3 diffuse = materials[material_id].diffuse * L.diffuse;
+vec3 compute_diffuse(Light L, Material M, vec3 normal, vec3 light_dir) {
+    vec3 diffuse = M.diffuse * L.diffuse;
     return diffuse * max(dot(normal, light_dir), 0);
 }
 
-vec3 compute_specular(Light L, vec3 normal, vec3 light_dir, vec3 half_vector) {
+vec3 compute_specular(Light L, Material M, vec3 normal, vec3 light_dir,
+                      vec3 half_vector) {
     if (dot(normal, light_dir) > 0) {
-        vec3 specular = materials[material_id].specular * L.specular;
-        float shininess = materials[material_id].shininess;
+        vec3 specular = M.specular * L.specular;
+        float shininess = M.shininess;
         return specular * pow(max(dot(normal, half_vector), 0), shininess);
     } else {
         return vec3(0, 0, 0);
@@ -90,27 +93,32 @@ float compute_spot(Light L, vec3 light_dir) {
     }
 }
 
-vec3 compute_shading(Light L, vec3 normal, vec3 position) {
+vec3 compute_shading(Light L, Material M, vec3 normal, vec3 position) {
     vec3 eye_dir = normalize(-position);
     vec3 light_pos = L.position.xyz / L.position.w;
     vec3 light_dir = normalize(light_pos - position);
     vec3 half_vector = normalize(light_dir + eye_dir);
-    vec3 diffuse = compute_diffuse(L, normal, light_dir);
-    vec3 specular = compute_specular(L, normal, light_dir, half_vector);
+    vec3 diffuse = compute_diffuse(L, M, normal, light_dir);
+    vec3 specular = compute_specular(L, M, normal, light_dir, half_vector);
     float spot_intensity = compute_spot(L, light_dir);
     return spot_intensity * (diffuse + specular);
 }
 
-vec3 compute_ambient() {
-    return materials[material_id].ambient * global_ambient;
+vec3 compute_ambient(Material M) {
+    return M.ambient * global_ambient;
 }
 
 void main() {
-    vec3 normal = normalize(frag_normal);
+    vec3 position = texture(position_sampler, frag_textcoord).xyz;
+    vec3 normal = texture(normal_sampler, frag_textcoord).xyz;
+    int material = int(texture(material_sampler, frag_textcoord).x);
+    Material M = materials[material];
     vec3 acc_color = vec3(0, 0, 0);
-    for (int i = 0; i < n_lights; ++i)
-        acc_color += compute_shading(lights[i], normal, frag_position);
-    vec3 ambient = compute_ambient();
-    frag_color = acc_color + ambient;
+    for (int i = 0; i < n_lights; ++i) {
+        Light L = lights[i];
+        acc_color += compute_shading(L, M, normal, position);
+    }
+    vec3 ambient = compute_ambient(M);
+    color = acc_color + ambient;
 }
 

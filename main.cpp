@@ -38,6 +38,7 @@
 #include "ShaderProgram.h"
 #include "UniformBuffer.h"
 #include "VertexArray.h"
+#include "FrameBuffer.h"
 
 // Materials
 enum MaterialID {
@@ -46,48 +47,47 @@ enum MaterialID {
 };
 
 // Scene configuration constants
-static const int I_OFFSET = 15;
-static const int J_OFFSET = 15;
-static const int N_LIGHTS_I = 8;
-static const int N_LIGHTS_J = 8;
-static const int N_LIGHTS = N_LIGHTS_I * N_LIGHTS_J;
+const int I_OFFSET = 15;
+const int J_OFFSET = 15;
+const int N_LIGHTS_I = 10;
+const int N_LIGHTS_J = 10;
+const int N_LIGHTS = N_LIGHTS_I * N_LIGHTS_J;
 
 // Window size
-static int window_w = 1920;
-static int window_h = 1080;
+int window_w = 1280;
+int window_h = 720;
 
 // Global Helpers
-static ShaderProgram shader;
-static UniformBuffer materials;
-static UniformBuffer lights;
-
-// Bear mesh
-static UniformBuffer bear_matrices;
-static VertexArray bear_mesh;
-
-// Ground quad
-static UniformBuffer ground_matrices;
-static VertexArray ground;
+ShaderProgram geompass_shader;
+ShaderProgram lightpass_shader;
+UniformBuffer materials;
+UniformBuffer lights;
+FrameBuffer framebuffer;
+VertexArray screen_quad;
+UniformBuffer bear_matrices;
+VertexArray bear_mesh;
+UniformBuffer ground_matrices;
+VertexArray ground_mesh;
 
 // Global matrices
-static glm::mat4 view;
-static glm::mat4 projection;
+glm::mat4 view;
+glm::mat4 projection;
 
 // Lights rotation
-static glm::mat4 rotation;
+glm::mat4 rotation;
 
 // Random colors
-static glm::vec3 random_colors[N_LIGHTS];
+glm::vec3 random_colors[N_LIGHTS];
 
 // Camera config
-#if 1
-static glm::vec3 eye(0.0, 100.0, 0.0);
-static glm::vec3 center(0.0, 0.0, 0.0);
-static glm::vec3 up(0.0, 0.0, 1.0);
+#if 0
+glm::vec3 eye(0.0, 100.0, 0.0);
+glm::vec3 center(0.0, 0.0, 0.0);
+glm::vec3 up(0.0, 0.0, 1.0);
 #else
-static glm::vec3 eye(-20.0, 20.0, -20.0);
-static glm::vec3 center(0, 0, 0);
-static glm::vec3 up(0.0, 1.0, 0.0);
+glm::vec3 eye(-20.0, 20.0, -20.0);
+glm::vec3 center(0, 0, 0);
+glm::vec3 up(0.0, 1.0, 0.0);
 #endif
 
 // Verifies the condition, if it fails, shows the error message and
@@ -102,30 +102,47 @@ static glm::vec3 up(0.0, 1.0, 0.0);
     } \
 }
 
-// Loads the shader
-static void LoadShader() {
+// Creates the framebuffer used for deferred shading
+void LoadFramebuffer() {
+    // Creates the position, normal and material textures
+    framebuffer.Init(window_w, window_h);
+    framebuffer.AddColorTexture(GL_RGB32F, GL_RGB, GL_FLOAT);
+    framebuffer.AddColorTexture(GL_RGB32F, GL_RGB, GL_FLOAT);
+    framebuffer.AddColorTexture(GL_R8, GL_RED, GL_UNSIGNED_BYTE);
     try {
-        shader.LoadVertexShader("shaders/deferred1_vs.glsl");
-        shader.LoadFragmentShader("shaders/deferred1_fs.glsl");
-        shader.LinkShader();
+        framebuffer.Verify();
+    } catch (std::exception& e) {
+        Assertf(false, "%s", e.what());
+    }
+}
+
+// Loads the geometry pass and lighting pass shaders
+void LoadShaders() {
+    try {
+        geompass_shader.LoadVertexShader("shaders/geompass_vs.glsl");
+        geompass_shader.LoadFragmentShader("shaders/geompass_fs.glsl");
+        geompass_shader.LinkShader();
+        lightpass_shader.LoadVertexShader("shaders/lightpass_vs.glsl");
+        lightpass_shader.LoadFragmentShader("shaders/lightpass_fs.glsl");
+        lightpass_shader.LinkShader();
     } catch (std::exception& e) {
         Assertf(false, "%s", e.what());
     }
 }
 
 // Creates an random number between 0 an 1
-static double Random() {
+double Random() {
     return (double)rand() / RAND_MAX;
 }
 
 // Creates the random colors
-static void CreateRandomColors() {
+void CreateRandomColors() {
     for (int i = 0; i < N_LIGHTS; ++i)
         random_colors[i] = glm::vec3(Random(), Random(), Random());
 }
 
 // Loads the materials
-static void CreateMaterialsBuffer() {
+void CreateMaterialsBuffer() {
     // Buffer configuration
     // struct Material {
     //     vec3 diffuse;
@@ -158,14 +175,35 @@ static void CreateMaterialsBuffer() {
 }
 
 // Compute the light translation given the i, j indices
-static glm::mat4 ComputeTranslation(int i, int j) {
+glm::mat4 ComputeTranslation(int i, int j) {
     auto x = (i - (N_LIGHTS_I - 1) / 2.0) * I_OFFSET;
     auto z = (j - (N_LIGHTS_J - 1) / 2.0) * J_OFFSET;
     return glm::translate(glm::vec3(x, 0, z));
 }
 
+// Loads the screen quad
+void LoadScreenQuad() {
+    unsigned int indices[] = {0, 1, 2, 3};
+    float vertices[] = {
+        -1, -1, 0,
+        -1,  1, 0,
+         1,  1, 0,
+         1, -1, 0,
+    };
+    float textcoords[] = {
+        0, 0,
+        0, 1,
+        1, 1,
+        1, 0
+    };
+    screen_quad.Init();
+    screen_quad.SetElementArray(indices, 4);
+    screen_quad.AddArray(0, vertices, 12, 3);
+    screen_quad.AddArray(1, textcoords, 8, 2);
+}
+
 // Loads the ground quad
-static void LoadGround() {
+void LoadGround() {
     unsigned int indices[] = {0, 1, 2, 3};
     float h = -0.1;
     float v = 100;
@@ -181,14 +219,14 @@ static void LoadGround() {
         0, 1, 0,
         0, 1, 0
     };
-    ground.Init();
-    ground.SetElementArray(indices, 4);
-    ground.AddArray(0, vertices, 12, 3);
-    ground.AddArray(1, normals, 12, 3);
+    ground_mesh.Init();
+    ground_mesh.SetElementArray(indices, 4);
+    ground_mesh.AddArray(0, vertices, 12, 3);
+    ground_mesh.AddArray(1, normals, 12, 3);
 }
 
 // Loads a single mesh into the gpu
-static void LoadMesh(VertexArray* vao, tinyobj::mesh_t *mesh) {
+void LoadMesh(VertexArray* vao, tinyobj::mesh_t *mesh) {
     vao->Init();
     vao->SetElementArray(mesh->indices.data(), mesh->indices.size());
     vao->AddArray(0, mesh->positions.data(), mesh->positions.size(), 3);
@@ -196,7 +234,7 @@ static void LoadMesh(VertexArray* vao, tinyobj::mesh_t *mesh) {
 }
 
 // Loads the bear mesh
-static void LoadBearMesh() {
+void LoadBearMesh() {
     auto inputfile = "data/bear-obj.obj";
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -209,7 +247,7 @@ static void LoadBearMesh() {
 }
 
 // Updates the lights buffer
-static void UpdateLightsBuffer() {
+void UpdateLightsBuffer() {
     // Buffer configuration
     // struct Light {
     //     vec4 position;
@@ -226,7 +264,6 @@ static void UpdateLightsBuffer() {
     //     int n_lights;
     //     Light lights[100];
     // };
-
 
     if (!lights.GetId())
         lights.Init();
@@ -269,7 +306,7 @@ static void UpdateLightsBuffer() {
 }
 
 // Creates the bear instances matrices
-static void UpdateBearMatrices() {
+void UpdateBearMatrices() {
     // Buffer configuration:
     // struct Matrices {
     //     mat4 mvp;
@@ -304,7 +341,7 @@ static void UpdateBearMatrices() {
 }
 
 // Creates a single ground instance
-static void UpdateGroundMatrices() {
+void UpdateGroundMatrices() {
     // Buffer configuration:
     // struct Matrices {
     //     mat4 mvp;
@@ -334,7 +371,7 @@ static void UpdateGroundMatrices() {
 }
 
 // Updates the variables that depend on the model, view and projection
-static void UpdateMatrices() {
+void UpdateMatrices() {
     view = glm::lookAt(eye, center, up);
     auto ratio = (float)window_w / (float)window_h;
     projection = glm::perspective(glm::radians(60.0f), ratio, 1.5f, 300.0f);
@@ -343,40 +380,64 @@ static void UpdateMatrices() {
 }
 
 // Loads the global opengl configuration
-static void LoadGlobalConfiguration() {
+void LoadGlobalConfiguration() {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(1.000, 0.996, 0.894, 1);
+    glClearColor(0.1, 0.1, 0.1, 1);
     glfwWindowHint(GLFW_SAMPLES, 8);
     glEnable(GL_MULTISAMPLE);
 }
 
-// Display callback, renders the sphere
-static void Display() {
+// Renders the geometry pass
+void RenderGeometry() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    shader.Enable();
+    geompass_shader.Enable();
     UpdateLightsBuffer();
-    shader.SetUniformBuffer("MaterialsBlock", 0, materials.GetId());
-    shader.SetUniformBuffer("LightsBlock", 1, lights.GetId());
 
-    shader.SetUniformBuffer("MatricesBlock", 2, ground_matrices.GetId());
-    shader.SetUniform("material_id", GROUND_MATERIAL);
-    ground.DrawElements(GL_QUADS);
+    geompass_shader.SetUniformBuffer("MatricesBlock", 2, ground_matrices.GetId());
+    geompass_shader.SetUniform("material_id", GROUND_MATERIAL);
+    ground_mesh.DrawElements(GL_QUADS);
 
-    shader.SetUniformBuffer("MatricesBlock", 2, bear_matrices.GetId());
-    shader.SetUniform("material_id", BEAR_MATERIAL);
+    geompass_shader.SetUniformBuffer("MatricesBlock", 2, bear_matrices.GetId());
+    geompass_shader.SetUniform("material_id", BEAR_MATERIAL);
     bear_mesh.DrawInstances(GL_TRIANGLES, N_LIGHTS);
 
-    shader.Disable();
+    geompass_shader.Disable();
+}
+
+// Renders the lighting pass
+void RenderLighting() {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    lightpass_shader.Enable();
+
+    auto& texts = framebuffer.GetTextures();
+    lightpass_shader.SetTexture2D("position_sampler", 0, texts[0]);
+    lightpass_shader.SetTexture2D("normal_sampler", 1, texts[1]);
+    lightpass_shader.SetTexture2D("material_sampler", 2, texts[2]);
+
+    lightpass_shader.SetUniformBuffer("MaterialsBlock", 0, materials.GetId());
+    lightpass_shader.SetUniformBuffer("LightsBlock", 1, lights.GetId());
+
+    screen_quad.DrawElements(GL_QUADS);
+
+    lightpass_shader.Disable();
+}
+
+// Display callback, renders the sphere
+void Render() {
+    framebuffer.Bind();
+    RenderGeometry();
+    framebuffer.Unbind();
+    RenderLighting();
 }
 
 // Measures the frames per second (and prints in the terminal)
-static void ComputeFPS() {
-    static double last = glfwGetTime();
-    static int frames = 0;
+void ComputeFPS() {
+    double last = glfwGetTime();
+    int frames = 0;
     double curr = glfwGetTime();
     if (curr - last > 1.0) {
-        printf("fps: %d\n", frames);
+        printf("fps: %d\r", frames);
+        fflush(stdout);
         last += 1.0;
         frames = 0;
     } else {
@@ -384,8 +445,8 @@ static void ComputeFPS() {
     }
 }
 
-// Updates the window size
-static void Resize(GLFWwindow *window) {
+// Updates the window size (w, h)
+void Resize(GLFWwindow *window) {
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
     if (width == window_w && height == window_h)
@@ -394,15 +455,16 @@ static void Resize(GLFWwindow *window) {
     window_w = width;
     window_h = height;
     glViewport(0, 0, width, height);
+    framebuffer.Resize(width, height);
 }
 
 // Called each frame
-static void Idle() {
-    rotation = glm::rotate(rotation, glm::radians(0.1f), glm::vec3(0, 1, 0));
+void Idle() {
+    rotation = glm::rotate(rotation, glm::radians(0.2f), glm::vec3(0, 1, 0));
 }
 
 // Keyboard callback
-static void Keyboard(GLFWwindow* window, int key, int scancode, int action,
+void Keyboard(GLFWwindow* window, int key, int scancode, int action,
                      int mods) {
     if (action != GLFW_PRESS)
         return;
@@ -417,13 +479,13 @@ static void Keyboard(GLFWwindow* window, int key, int scancode, int action,
 }
 
 // Mouse Callback
-static void Mouse(GLFWwindow *window, int button, int action, int mods) {
+void Mouse(GLFWwindow *window, int button, int action, int mods) {
     double x, y;
     glfwGetCursorPos(window, &x, &y);
 }
 
 // Motion callback
-static void Motion(GLFWwindow *window, double x, double y) {
+void Motion(GLFWwindow *window, double x, double y) {
 }
 
 // Initialization
@@ -444,18 +506,20 @@ int main(int argc, char *argv[]) {
 
     // Init application
     LoadGlobalConfiguration();
-    CreateRandomColors();
+    LoadFramebuffer();
+    LoadShaders();
     CreateMaterialsBuffer();
+    CreateRandomColors();
+    LoadScreenQuad();
     LoadGround();
     LoadBearMesh();
-    LoadShader();
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
         Resize(window);
         Idle();
         UpdateMatrices();
-        Display();
+        Render();
         ComputeFPS();
         glfwSwapBuffers(window);
         glfwPollEvents();
