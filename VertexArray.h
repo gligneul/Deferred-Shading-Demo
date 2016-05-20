@@ -1,18 +1,18 @@
 /*
  * The MIT License (MIT)
- * 
+ *
  * Copyright (c) 2016 Gabriel de Quadros Ligneul
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- * 
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -23,7 +23,7 @@
  */
 
 #ifndef VERTEXARRAY_H
-#define VERTEXARRAY_H 
+#define VERTEXARRAY_H
 
 #include <vector>
 
@@ -31,51 +31,51 @@
  * Opengl vertex array object abstraction
  */
 class VertexArray {
-public:
-    /**
-     * Default constructor
-     */
-    VertexArray();
+ public:
+  /**
+   * Default constructor
+   */
+  VertexArray();
 
-    /**
-     * Destructor
-     */
-    ~VertexArray();
+  /**
+   * Destructor
+   */
+  ~VertexArray();
 
-    /**
-     * Creates the vao
-     */
-    void Init();
+  /**
+   * Creates the vao
+   */
+  void Init();
 
-    /**
-     * Adds the element array buffer
-     * T = unsigned int | unsigned short | unsigned char
-     */
-    template<typename T>
-    void SetElementArray(const T *array, int n);
+  /**
+   * Adds the element array buffer
+   * T = unsigned int | unsigned short | unsigned char
+   */
+  template <typename T>
+  void SetElementArray(const T *array, int n);
 
-    /**
-     * Adds an array and attachs it to the vao
-     * T = float | int | unsigned int | char | unsigned char
-     */
-    template<typename T>
-    void AddArray(int location, const T *array, int n, int n_elements);
+  /**
+   * Adds an array and attachs it to the vao
+   * T = float | int | unsigned int | char | unsigned char
+   */
+  template <typename T>
+  void AddArray(int location, const T *array, int n, int n_elements);
 
-    /**
-     * Draws the vao
-     */
-    void DrawElements(int primitive);
+  /**
+   * Draws the vao
+   */
+  void DrawElements(int primitive);
 
-    /**
-     * Draws the $n instances of the vao
-     */
-    void DrawInstances(int primitive, int n);
+  /**
+   * Draws the $n instances of the vao
+   */
+  void DrawInstances(int primitive, int n);
 
-private:
-    unsigned int vao_;
-    std::vector<unsigned int> arrays_;
-    unsigned int n_indices_;
-    unsigned int type_;
+ private:
+  unsigned int vao_;
+  std::vector<unsigned int> arrays_;
+  unsigned int n_indices_;
+  unsigned int type_;
 };
 
 #endif
