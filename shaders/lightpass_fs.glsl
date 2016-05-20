@@ -58,6 +58,9 @@ layout (std140) uniform MaterialsBlock {
     Material materials[8];
 };
 
+// Background color
+const vec3 background = vec3(0.1, 0.1, 0.1);
+
 // Screen texture coordinates
 in vec2 frag_textcoord;
 
@@ -109,9 +112,13 @@ vec3 compute_ambient(Material M) {
 }
 
 void main() {
+    int material = int(texture(material_sampler, frag_textcoord).x) - 1;
+    if (material == -1) {
+        color = background;
+        return;
+    }
     vec3 position = texture(position_sampler, frag_textcoord).xyz;
     vec3 normal = texture(normal_sampler, frag_textcoord).xyz;
-    int material = int(texture(material_sampler, frag_textcoord).x);
     Material M = materials[material];
     vec3 acc_color = vec3(0, 0, 0);
     for (int i = 0; i < n_lights; ++i) {

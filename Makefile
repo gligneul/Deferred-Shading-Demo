@@ -52,6 +52,5 @@ FrameBuffer.o: FrameBuffer.cpp FrameBuffer.h
 main.o: main.cpp ShaderProgram.h UniformBuffer.h VertexArray.h \
  FrameBuffer.h
 ShaderProgram.o: ShaderProgram.cpp ShaderProgram.h
-Texture2D.o: Texture2D.cpp Texture2D.h
 UniformBuffer.o: UniformBuffer.cpp UniformBuffer.h
 VertexArray.o: VertexArray.cpp VertexArray.h

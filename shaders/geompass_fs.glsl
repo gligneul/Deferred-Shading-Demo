@@ -39,6 +39,9 @@ layout(location = 2) out vec3 material;
 void main() {
     position = frag_position;
     normal = normalize(frag_normal);
-    material.r = material_id;
+
+    // If the material equals to 0, no geometry was rendered and the
+    // lightpass should render the background color
+    material.r = material_id + 1;
 }
 

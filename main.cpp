@@ -80,15 +80,11 @@ glm::mat4 rotation;
 glm::vec3 random_colors[N_LIGHTS];
 
 // Camera config
-#if 0
-glm::vec3 eye(0.0, 100.0, 0.0);
-glm::vec3 center(0.0, 0.0, 0.0);
-glm::vec3 up(0.0, 0.0, 1.0);
-#else
-glm::vec3 eye(-20.0, 20.0, -20.0);
-glm::vec3 center(0, 0, 0);
-glm::vec3 up(0.0, 1.0, 0.0);
-#endif
+int camera_config = 0;
+const int N_CAMERA_CONFIGS = 3;
+glm::vec3 eye;
+glm::vec3 center;
+glm::vec3 up;
 
 // Verifies the condition, if it fails, shows the error message and
 // exits the program
@@ -370,8 +366,32 @@ void UpdateGroundMatrices() {
     ground_matrices.SendToDevice();
 }
 
+// Updates the camera configuration
+void UpdateCameraConfig() {
+    switch (camera_config) {
+        case 0:
+            eye = glm::vec3(0.0, 5.0, 0.0);
+            center = glm::vec3(1.0, 5.0, -1.0);
+            up = glm::vec3(0.0, 1.0, 0.0);
+            break;
+        case 1:
+            eye = glm::vec3(-20.0, 20.0, -20.0);
+            center = glm::vec3(0.0, 0.0, 0.0);
+            up = glm::vec3(0.0, 1.0, 0.0);
+            break;
+        case 2:
+            eye = glm::vec3(0.0, 100.0, 0.0);
+            center = glm::vec3(0.0, 0.0, 0.0);
+            up = glm::vec3(0.0, 0.0, 1.0);
+            break;
+        default:
+            break;
+    }
+}
+
 // Updates the variables that depend on the model, view and projection
 void UpdateMatrices() {
+    UpdateCameraConfig();
     view = glm::lookAt(eye, center, up);
     auto ratio = (float)window_w / (float)window_h;
     projection = glm::perspective(glm::radians(60.0f), ratio, 1.5f, 300.0f);
@@ -382,7 +402,6 @@ void UpdateMatrices() {
 // Loads the global opengl configuration
 void LoadGlobalConfiguration() {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.1, 0.1, 0.1, 1);
     glfwWindowHint(GLFW_SAMPLES, 8);
     glEnable(GL_MULTISAMPLE);
 }
@@ -472,6 +491,9 @@ void Keyboard(GLFWwindow* window, int key, int scancode, int action,
     switch (key) {
         case GLFW_KEY_Q:
             exit(0);
+            break;
+        case GLFW_KEY_SPACE:
+            camera_config = (camera_config + 1) % N_CAMERA_CONFIGS;
             break;
         default:
             break;
