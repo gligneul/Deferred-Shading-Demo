@@ -88,7 +88,7 @@ glm::vec3 up;
 #define Assert(condition, message) Assertf(condition, message, 0)
 #define Assertf(condition, format, ...)                                        \
   {                                                                            \
-    if (!condition) {                                                          \
+    if (!(condition)) {                                                        \
       auto finalformat =                                                       \
           std::string("Error at function ") + __func__ + ": " + format + "\n"; \
       fprintf(stderr, finalformat.c_str(), __VA_ARGS__);                       \
