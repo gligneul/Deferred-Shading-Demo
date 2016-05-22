@@ -215,7 +215,7 @@ void LoadBearMesh() {
 
   std::string err;
   bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile, "data/");
-  Assertf(err.empty() && !ret, "tinyobj error: %s", err.c_str());
+  Assertf(err.empty() && ret, "tinyobj error: %s", err.c_str());
 
   LoadMesh(&bear_mesh, &shapes[0].mesh);
 }
